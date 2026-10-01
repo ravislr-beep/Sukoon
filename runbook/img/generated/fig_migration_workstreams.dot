@@ -1,0 +1,27 @@
+digraph G {
+
+  graph [fontname="Liberation Sans", fontsize=11, bgcolor="white", pad="0.3", nodesep="0.35", ranksep="0.45", fontcolor="#1F3864"];
+  node  [fontname="Liberation Sans", fontsize=10, shape=box, style="rounded,filled", fillcolor="white", color="#44546A", penwidth=1.1, margin="0.14,0.07"];
+  edge  [fontname="Liberation Sans", fontsize=9, color="#44546A", fontcolor="#595959", arrowsize=0.7, penwidth=1.0];
+
+
+  rankdir=LR; nodesep=0.2; ranksep=0.35;
+  subgraph cluster_prep { label="Phase 1 Prepare"; style="dashed,rounded"; color="#595959";
+    a [label="A0 Upgrade readiness\n(8.8 assessment)", fillcolor="#FFF2CC"];
+    b [label="B Kafka platform\n(Confluent, network)", fillcolor="#E2EFDA"];
+    e [label="E SRS and search\nplatform", fillcolor="#E2EFDA"];
+  }
+  subgraph cluster_build { label="Phase 2 Build and rehearse"; style="dashed,rounded"; color="#595959";
+    a1 [label="A Pega config and\ndatabase update\n(bridge, then 26.1.1)", fillcolor="#DCE6F2"];
+    c [label="C Topics and ACLs", fillcolor="#E2EFDA"];
+    f [label="F Index rebuild", fillcolor="#E4DFEC"];
+  }
+  subgraph cluster_cut { label="Phase 3 Cut over"; style="dashed,rounded"; color="#595959";
+    d [label="D Stream drain and\nconsumer state", fillcolor="#DCE6F2"];
+    g [label="G DNS and TLS", fillcolor="#F2F2F2"];
+    h [label="H Application cutover", fillcolor="#E2EFDA"];
+  }
+  i [label="I Operational handover", fillcolor="#E2EFDA"];
+  a -> a1; b -> c; e -> f; a1 -> d; c -> d; f -> h; d -> h; g -> h; h -> i;
+
+}

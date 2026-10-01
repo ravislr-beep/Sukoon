@@ -1,0 +1,27 @@
+digraph G {
+
+  graph [fontname="Liberation Sans", fontsize=11, bgcolor="white", pad="0.3", nodesep="0.35", ranksep="0.45", fontcolor="#1F3864"];
+  node  [fontname="Liberation Sans", fontsize=10, shape=box, style="rounded,filled", fillcolor="white", color="#44546A", penwidth=1.1, margin="0.14,0.07"];
+  edge  [fontname="Liberation Sans", fontsize=9, color="#44546A", fontcolor="#595959", arrowsize=0.7, penwidth=1.0];
+
+
+  rankdir=TB;
+  start [label="Assess the Pega 8.8 source estate", fillcolor="#DCE6F2"];
+  q1 [shape=diamond, style="filled", fillcolor="#FFF2CC", label="Source runs on\nVMs or on\nKubernetes?", margin="0.04,0.04", fontsize=9.5];
+  q2 [shape=diamond, style="filled", fillcolor="#FFF2CC", label="Stream: embedded\nstream nodes or\nexternal Kafka?", margin="0.04,0.04", fontsize=9.5];
+  q3 [shape=diamond, style="filled", fillcolor="#FFF2CC", label="Search: embedded,\nlegacy plug-in\nor SRS?", margin="0.04,0.04", fontsize=9.5];
+  vm [label="Side-by-side move to the new\nAKS platform (VMs are not\nsupported from '25)", fillcolor="#E2EFDA"];
+  k8s [label="Side-by-side is still preferred\nbecause the target is a new\nAKS cluster and Confluent", fillcolor="#E2EFDA"];
+  s1 [label="Drain embedded stream with the\nStream Migration activity (8.7+),\nswitch to Confluent (Release 1)", fillcolor="#FFF2CC"];
+  s2 [label="Drain external Kafka queues;\nswitch provider to Confluent\n(Release 1)", fillcolor="#FFF2CC"];
+  r1 [label="Full index build through SRS\n(Section 12)", fillcolor="#FFF2CC"];
+  start -> q1;
+  q1 -> vm [label="VMs"];
+  q1 -> k8s [label="Kubernetes"];
+  vm -> q2; k8s -> q2;
+  q2 -> s1 [label="Embedded"];
+  q2 -> s2 [label="External"];
+  s1 -> q3; s2 -> q3;
+  q3 -> r1 [label="Any of the three"];
+
+}

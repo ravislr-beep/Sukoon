@@ -1,0 +1,29 @@
+digraph G {
+
+  graph [fontname="Liberation Sans", fontsize=11, bgcolor="white", pad="0.3", nodesep="0.35", ranksep="0.45", fontcolor="#1F3864"];
+  node  [fontname="Liberation Sans", fontsize=10, shape=box, style="rounded,filled", fillcolor="white", color="#44546A", penwidth=1.1, margin="0.14,0.07"];
+  edge  [fontname="Liberation Sans", fontsize=9, color="#44546A", fontcolor="#595959", arrowsize=0.7, penwidth=1.0];
+
+
+  rankdir=TB;
+  start [label="Topic or stream in scope", fillcolor="#DCE6F2"];
+  q1 [shape=diamond, style="filled", fillcolor="#FFF2CC", label="Pega platform topic\n(stream.streamNamePattern\nprefix)?", margin="0.04,0.04", fontsize=9.5];
+  q2 [shape=diamond, style="filled", fillcolor="#FFF2CC", label="Application Kafka data set\non a separate Kafka\nservice?", margin="0.04,0.04", fontsize=9.5];
+  q3 [shape=diamond, style="filled", fillcolor="#FFF2CC", label="Does the consumer need\nhistory that is still\nonly in Kafka?", margin="0.04,0.04", fontsize=9.5];
+  q4 [shape=diamond, style="filled", fillcolor="#FFF2CC", label="Is the source a Kafka\ncluster that Cluster Linking\ncan read?", margin="0.04,0.04", fontsize=9.5];
+  drain [label="DRAIN, do not copy.\nRun Stream Migration activity until\nqueueSize = 0 and COMPLETED.\nTarget creates its topics empty\n(new prefix at the platform move).", fillcolor="#E2EFDA"];
+  keep [label="Out of scope: the external\nservice stays; repoint only if the\napplication team requests it", fillcolor="#FFF2CC"];
+  newo [label="Start data flow from\n'only new records' after cutover;\nrecord last offsets as evidence", fillcolor="#E2EFDA"];
+  cl [label="Cluster Linking mirror topics\n(offsets preserved) then\npromote at cutover", fillcolor="#E2EFDA"];
+  replay [label="Replay from the system of\nrecord (database or source app)", fillcolor="#FFF2CC"];
+  start -> q1;
+  q1 -> drain [label="Yes"];
+  q1 -> q2 [label="No"];
+  q2 -> keep [label="Yes, unchanged"];
+  q2 -> q3 [label="Moving to Confluent"];
+  q3 -> newo [label="No"];
+  q3 -> q4 [label="Yes"];
+  q4 -> cl [label="Yes"];
+  q4 -> replay [label="No"];
+
+}

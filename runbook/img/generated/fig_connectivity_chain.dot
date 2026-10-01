@@ -1,0 +1,22 @@
+digraph G {
+
+  graph [fontname="Liberation Sans", fontsize=11, bgcolor="white", pad="0.3", nodesep="0.35", ranksep="0.45", fontcolor="#1F3864"];
+  node  [fontname="Liberation Sans", fontsize=10, shape=box, style="rounded,filled", fillcolor="white", color="#44546A", penwidth=1.1, margin="0.14,0.07"];
+  edge  [fontname="Liberation Sans", fontsize=9, color="#44546A", fontcolor="#595959", arrowsize=0.7, penwidth=1.0];
+
+
+  rankdir=LR; nodesep=0.3; ranksep=0.3; newrank=true;
+  s0 [label="1. DNS resolution\nname resolves to a\nprivate IP", fillcolor="#DCE6F2", width=1.9]; s1 [label="2. Route\nUDR / firewall path\nto private endpoint", fillcolor="#DCE6F2", width=1.9]; s2 [label="3. Network policy\negress allowed from\npod namespace", fillcolor="#DCE6F2", width=1.9]; s3 [label="4. TCP connect\nport 9092 or 443\nreachable", fillcolor="#DCE6F2", width=1.9]; s4 [label="5. TLS handshake\nTLS 1.2+, SNI\nmatches host", fillcolor="#FCE4D6", width=1.9]; s5 [label="6. Certificate\nchain trusted by\nclient truststore", fillcolor="#FCE4D6", width=1.9]; s6 [label="7. Authentication\nSASL / OAuth / basic\nor client certificate", fillcolor="#FCE4D6", width=1.9]; s7 [label="8. Authorization\nACL or role allows\nthe operation", fillcolor="#FCE4D6", width=1.9]; s8 [label="9. Operation\nproduce, consume,\nindex, search", fillcolor="#E2EFDA", width=1.9];
+  s0 -> s1 -> s2 -> s3 -> s4;
+  s5 -> s6 -> s7 -> s8;
+  s4 -> s5 [constraint=false];
+  {rank=same; s0; s5}
+  {rank=same; s1; s6}
+  {rank=same; s2; s7}
+  {rank=same; s3; s8}
+  note [shape=note, style=filled, fillcolor="white", color="#595959", fontsize=9,
+        label="Work through the steps in order.\nA failure at one step makes\nevery later step fail.\nRecord evidence (Appendix C)."];
+  {rank=same; s4; note}
+  s0 -> s5 [style=invis];
+
+}

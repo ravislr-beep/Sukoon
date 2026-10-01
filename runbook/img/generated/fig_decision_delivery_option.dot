@@ -1,0 +1,24 @@
+digraph G {
+
+  graph [fontname="Liberation Sans", fontsize=11, bgcolor="white", pad="0.3", nodesep="0.35", ranksep="0.45", fontcolor="#1F3864"];
+  node  [fontname="Liberation Sans", fontsize=10, shape=box, style="rounded,filled", fillcolor="white", color="#44546A", penwidth=1.1, margin="0.14,0.07"];
+  edge  [fontname="Liberation Sans", fontsize=9, color="#44546A", fontcolor="#595959", arrowsize=0.7, penwidth=1.0];
+
+
+  rankdir=TB;
+  start [label="Choose how to reach Pega 26.1.1 from 8.8", fillcolor="#DCE6F2"];
+  q1 [shape=diamond, style="filled", fillcolor="#FFF2CC", label="Is the source on 23.1.4,\n24.1.3, 24.2.2 or a\nlater patch?", margin="0.04,0.04", fontsize=9.5];
+  q2 [shape=diamond, style="filled", fillcolor="#FFF2CC", label="Can the 8.8 nodes reach\nConfluent and SRS over\nprivate networking?", margin="0.04,0.04", fontsize=9.5];
+  q3 [shape=diamond, style="filled", fillcolor="#FFF2CC", label="Can the business accept\nthree change windows?", margin="0.04,0.04", fontsize=9.5];
+  direct [label="Remove Hazelcast on the source,\nthen update to 26.1.1\n(not the case for 8.8)", fillcolor="#F2F2F2"];
+  three [label="RECOMMENDED: three releases\nR1 externalize Kafka and search on 8.8\nR2 move to AKS on the bridge release,\nremove Hazelcast\nR3 zero-downtime update to 26.1.1", fillcolor="#E2EFDA"];
+  two [label="Combined R1 + R2: switch Kafka\nand search during the platform move;\nthen R3. Deviation from Pega guidance:\nconfirm with Pega Support first", fillcolor="#FFF2CC"];
+  start -> q1;
+  q1 -> direct [label="Yes"];
+  q1 -> q2 [label="No (8.8)"];
+  q2 -> q3 [label="Yes"];
+  q2 -> two [label="No"];
+  q3 -> three [label="Yes"];
+  q3 -> two [label="No"];
+
+}

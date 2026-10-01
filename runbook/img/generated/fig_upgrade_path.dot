@@ -1,0 +1,30 @@
+digraph G {
+
+  graph [fontname="Liberation Sans", fontsize=11, bgcolor="white", pad="0.3", nodesep="0.35", ranksep="0.45", fontcolor="#1F3864"];
+  node  [fontname="Liberation Sans", fontsize=10, shape=box, style="rounded,filled", fillcolor="white", color="#44546A", penwidth=1.1, margin="0.14,0.07"];
+  edge  [fontname="Liberation Sans", fontsize=9, color="#44546A", fontcolor="#595959", arrowsize=0.7, penwidth=1.0];
+
+
+  rankdir=TB; nodesep=0.3; ranksep=0.32;
+  src [label="Pega 8.8 source (production)", fillcolor="#DCE6F2"];
+  p1 [label="Prepare on 8.8\nUpdate Tools, Jakarta JAR review,\nprimaryKeyUtility dry run,\ncustom queue processor review", fillcolor="#FFF2CC"];
+  p2 [label="Build target platform\nAKS, Confluent, search cluster,\nSRS, Key Vault, DNS, TLS", fillcolor="#F2F2F2"];
+  subgraph cluster_r1 { label="Release 1: externalize on 8.8 (no Pega software change)"; style="dashed,rounded"; color="#595959";
+    r1 [label="Drain stream, switch 8.8 to Confluent;\nconnect 8.8 to SRS, full index build", fillcolor="#E2EFDA"];
+  }
+  subgraph cluster_r2 { label="Release 2: platform move to AKS on the bridge release"; style="dashed,rounded"; color="#595959";
+    r2 [label="Drain, copy database, update to bridge\n(24.1.4 or later patch), start on AKS\nwith new topic prefix and index prefix", fillcolor="#E2EFDA"];
+    hz [label="Remove Hazelcast (DSS method)\nin the same window", fillcolor="#E2EFDA"];
+  }
+  subgraph cluster_r3 { label="Release 3: release update on the same platform"; style="dashed,rounded"; color="#595959";
+    r3 [label="Zero-downtime update to 26.1.1\nsame AKS, Confluent and SRS", fillcolor="#E2EFDA"];
+  }
+  done [label="Hypercare, handover,\ndecommission 8.8 estate", fillcolor="#E2EFDA"];
+  src -> p1 -> r1; p2 -> r1;
+  r1 -> r2 [label="rehearsed on staging"];
+  r2 -> hz;
+  hz -> r3 [label="rehearsed on staging"];
+  r3 -> done;
+  {rank=same; p1; p2}
+
+}

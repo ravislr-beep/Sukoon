@@ -1,0 +1,33 @@
+digraph G {
+
+  graph [fontname="Liberation Sans", fontsize=11, bgcolor="white", pad="0.3", nodesep="0.35", ranksep="0.45", fontcolor="#1F3864"];
+  node  [fontname="Liberation Sans", fontsize=10, shape=box, style="rounded,filled", fillcolor="white", color="#44546A", penwidth=1.1, margin="0.14,0.07"];
+  edge  [fontname="Liberation Sans", fontsize=9, color="#44546A", fontcolor="#595959", arrowsize=0.7, penwidth=1.0];
+
+
+  rankdir=TB; nodesep=0.5; ranksep=0.55;
+  u [label="User", shape=box, style="rounded"];
+  ing [label="Ingress", fillcolor="#F2F2F2"];
+  web [label="Pega web tier", fillcolor="#DCE6F2"];
+  bat [label="Pega batch tier", fillcolor="#DCE6F2"];
+  db [label="Database", shape=cylinder, style=filled, fillcolor="#F2F2F2"];
+  k [label="Confluent Cloud\ntopics (pega- prefix)", fillcolor="#E2EFDA"];
+  srs [label="SRS", fillcolor="#E4DFEC"];
+  os [label="Search cluster", fillcolor="#E2EFDA"];
+  ops [label="Platform team", shape=box, style="rounded"];
+  ctl [label="AKS API, Confluent console,\nsearch console (private)", fillcolor="#F2F2F2"];
+  mon [label="Azure Monitor and SIEM", fillcolor="#F2F2F2"];
+  u -> ing -> web [label="1 request", color="#1F3864", fontcolor="#1F3864", penwidth=1.6];
+  web -> db [label="1 rules and case data", color="#1F3864", fontcolor="#1F3864", penwidth=1.6];
+  web -> k [label="2 queue processor\nmessages", color="#C55A11", fontcolor="#C55A11", penwidth=1.6];
+  k -> bat [label="2 consume", color="#C55A11", fontcolor="#C55A11", penwidth=1.6];
+  bat -> srs [label="3 index (incremental\nindexer queue processor)", color="#7030A0", fontcolor="#7030A0", penwidth=1.6];
+  web -> srs [label="3 search query", color="#7030A0", fontcolor="#7030A0"];
+  srs -> os [label="3 store and query", color="#7030A0", fontcolor="#7030A0", penwidth=1.6];
+  ops -> ctl [label="4 administration", style=dashed];
+  web -> mon [label="5 telemetry", style=dotted];
+  srs -> mon [style=dotted];
+  k -> mon [style=dotted];
+  os -> mon [style=dotted];
+
+}

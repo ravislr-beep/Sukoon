@@ -1,0 +1,31 @@
+digraph G {
+
+  graph [fontname="Liberation Sans", fontsize=11, bgcolor="white", pad="0.3", nodesep="0.35", ranksep="0.45", fontcolor="#1F3864"];
+  node  [fontname="Liberation Sans", fontsize=10, shape=box, style="rounded,filled", fillcolor="white", color="#44546A", penwidth=1.1, margin="0.14,0.07"];
+  edge  [fontname="Liberation Sans", fontsize=9, color="#44546A", fontcolor="#595959", arrowsize=0.7, penwidth=1.0];
+
+
+  rankdir=TB; ranksep=0.3;
+  start [label="Stream status not NORMAL, or queue processors stuck", fillcolor="#F8CBAD"];
+  q1 [shape=diamond, style="filled", fillcolor="#FFF2CC", label="nslookup of bootstrap\nreturns private IP?", margin="0.04,0.04", fontsize=9.5];
+  q2 [shape=diamond, style="filled", fillcolor="#FFF2CC", label="openssl s_client to\nbootstrap:9092 completes\nTLS?", margin="0.04,0.04", fontsize=9.5];
+  q3 [shape=diamond, style="filled", fillcolor="#FFF2CC", label="kcat -L lists brokers and\nall broker names resolve\nprivately?", margin="0.04,0.04", fontsize=9.5];
+  q4 [shape=diamond, style="filled", fillcolor="#FFF2CC", label="Pega log shows SASL\nauthentication failure?", margin="0.04,0.04", fontsize=9.5];
+  q5 [shape=diamond, style="filled", fillcolor="#FFF2CC", label="Pega log shows topic or\ngroup authorization\nerror?", margin="0.04,0.04", fontsize=9.5];
+  q6 [shape=diamond, style="filled", fillcolor="#FFF2CC", label="Producer errors on\nrecord size?", margin="0.04,0.04", fontsize=9.5];
+  f1 [label="Fix private DNS zone record\nor VNet link", fillcolor="#FFF2CC"];
+  f2 [label="Check NSG / firewall / network\npolicy, private endpoint state", fillcolor="#FFF2CC"];
+  f3 [label="Add zonal broker records;\nconfirm all private endpoints\nare Approved", fillcolor="#FFF2CC"];
+  f4 [label="Correct STREAM_JAAS_CONFIG\nin Key Vault; re-sync secret;\nrestart pods", fillcolor="#FFF2CC"];
+  f5 [label="Add PREFIXED ACLs for topic and\ngroup; TRANSACTIONAL_ID and\nIDEMPOTENT_WRITE", fillcolor="#FFF2CC"];
+  f6 [label="Raise topic max.message.bytes\nor align stream.producer.* JVM args", fillcolor="#FFF2CC"];
+  f7 [label="Collect evidence; open Pega and\nConfluent support cases", fillcolor="#DCE6F2"];
+  start -> q1;
+  q1 -> f1 [label="No"]; q1 -> q2 [label="Yes"];
+  q2 -> f2 [label="No"]; q2 -> q3 [label="Yes"];
+  q3 -> f3 [label="No"]; q3 -> q4 [label="Yes"];
+  q4 -> f4 [label="Yes"]; q4 -> q5 [label="No"];
+  q5 -> f5 [label="Yes"]; q5 -> q6 [label="No"];
+  q6 -> f6 [label="Yes"]; q6 -> f7 [label="No"];
+
+}

@@ -1,0 +1,57 @@
+"""Reference register. Every [Rn] citation in the document must resolve here."""
+
+PD = "https://docs.pega.com/bundle/platform/page/platform/"
+PD25 = "https://docs.pega.com/bundle/platform-25/page/platform/"
+PD241 = "https://docs.pega.com/bundle/platform-241/page/platform/"
+GH = "https://github.com/pegasystems/pega-helm-charts/blob/master/"
+CC = "https://docs.confluent.io/cloud/current/"
+
+REFS = {
+    "R1": ("Pega Documentation", "Platform Support Guide, Pega Platform '26", PD + "deployment/platform-support-guide/platform-support-guide.html"),
+    "R2": ("Pega Documentation", "Adopting Pega Platform infrastructure changes", PD + "deployment/adopting-infrastructure-changes.html"),
+    "R3": ("Pega Documentation", "Completing prerequisites to update to Pega Platform '26", PD + "deployment/client-managed-cloud/prereq-pega-platform-26.html"),
+    "R4": ("Pega Documentation", "Prerequisites for Pega Platform '25", PD + "deployment/client-managed-cloud/prereq-pega-platform-25.html"),
+    "R5": ("Pega Documentation", "Removing Hazelcast from your deployment", PD25 + "deployment/externalization-of-services/removing-hazelcast.html"),
+    "R6": ("Pega Documentation", "Performing prerequisite steps (Hazelcast removal)", PD25 + "deployment/externalization-of-services/hz-removal-prereq.html"),
+    "R7": ("Pega Documentation", "Removing Hazelcast with near zero downtime", PD25 + "deployment/externalization-of-services/rm-hazelcast-near-zero-downtime.html"),
+    "R8": ("Pega Documentation", "Removing Hazelcast with downtime ('24.1)", PD241 + "deployment/externalization-of-services/hz-removal-downtime.html"),
+    "R9": ("Pega Documentation", "Removing Hazelcast FAQ", PD25 + "deployment/externalization-of-services/removing-hazelcast-faq.html"),
+    "R10": ("Pega Documentation", "Configuring a prpcUtils streaming service", PD + "deployment/client-managed-cloud/configuring-prpcutils-streaming.html"),
+    "R11": ("Pega Documentation", "Updating Pega Platform to Tomcat 10.1", PD + "deployment/tomcat-10-prepare-overview.html"),
+    "R12": ("Pega Documentation", "Create primary key constraints for tables in your database (primaryKeyUtility)", PD + "deployment/run-primarykeyutility.html"),
+    "R13": ("Pega Documentation", "External Kafka in your deployment", PD + "deployment/externalization-of-services/externalize-kafka-in-your-deployment.html"),
+    "R14": ("Pega Documentation", "Configuring a containerized deployment to use a Kafka service", PD + "deployment/externalization-of-services/deploy-external-kafka.html"),
+    "R15": ("Pega Documentation", "Switching Kafka providers while preserving Stream data", PD + "deployment/externalization-of-services/migrate-external-kafka-providers.html"),
+    "R16": ("Pega Documentation", "External Search in your deployment", PD + "deployment/externalization-of-services/externalize-search-in-your-deployment.html"),
+    "R17": ("Pega Documentation", "Connecting Pega Platform to SRS", PD + "deployment/externalization-of-services/connect-pega-platform-to-srs.html"),
+    "R18": ("Pega Documentation", "Connecting a new containerized deployment to SRS", PD + "deployment/externalization-of-services/connect-new-k8s-to-srs.html"),
+    "R19": ("Pega Documentation", "Rebuilding search indexes", PD + "search-engine/rebuilding-search-indexes.html"),
+    "R20": ("Pega Documentation", "Rebuilding search indexes from the user interface", PD + "search-engine/rebuild-search-indexes-user-interface.html"),
+    "R21": ("Pega Documentation", "Checking search index status", PD + "search-engine/search-index-status-checking.html"),
+    "R22": ("Pega Documentation", "Requirements and prerequisites (client-managed cloud)", PD + "deployment/client-managed-cloud/requirements-prerequisites.html"),
+    "R23": ("Pega Documentation", "Pega Platform Kubernetes architecture", PD + "deployment/client-managed-cloud/pega-kubernetes-architecture.html"),
+    "R24": ("Pega Documentation", "Third-party externalized services FAQs", PD + "deployment/client-managed-cloud/third-party-externalized-services-faqs.html"),
+    "R25": ("Pega Documentation", "Zero-downtime update checklist", PD + "deployment/update-zdt-checklist.html"),
+    "R26": ("Pega Documentation", "Preparing for an update or patch", PD + "deployment/preparing-for-an-update-patch.html"),
+    "R27": ("Pega Documentation", "Update Pega Platform", PD + "deployment/update-pega-platform.html"),
+    "R28": ("Pegasystems, GitHub", "Pega Helm charts: charts/pega/README.md (chart 4.13.0)", GH + "charts/pega/README.md"),
+    "R29": ("Pegasystems, GitHub", "Pega Helm charts: backingservices SRS chart README", GH + "charts/backingservices/charts/srs/README.md"),
+    "R30": ("Pegasystems, GitHub", "Pega Helm charts: Switch from embedded Stream to externalized Kafka service", GH + "charts/pega/MigrationToExternalStream.md"),
+    "R31": ("Pegasystems, GitHub", "Pega Helm charts: Kafka cluster requirements", GH + "charts/pega/KafkaClusterRequirement.md"),
+    "R32": ("Pegasystems, GitHub", "Pega Helm charts: Deploying Pega Platform on AKS", GH + "docs/Deploying-Pega-on-AKS.md"),
+    "R33": ("Pegasystems, GitHub", "Pega Helm charts: Upgrading Pega Platform with zero-downtime", GH + "docs/upgrading-pega-deployment-zero-downtime.md"),
+    "R34": ("Pega Academy", "Search and Reporting Service", "https://academy.pega.com/topic/search-and-reporting-service/v3"),
+    "R35": ("Pega Academy", "Deployment architecture with external services", "https://academy.pega.com/topic/deployment-architecture-external-services/v1"),
+    "R36": ("Pega Academy", "Cloud deployment architecture", "https://academy.pega.com/topic/cloud-deployment-architecture/v1"),
+    "R37": ("Confluent Documentation", "Kafka cluster types in Confluent Cloud", CC + "clusters/cluster-types.html"),
+    "R38": ("Confluent Documentation", "Use Azure Private Link for Dedicated clusters on Confluent Cloud", CC + "networking/private-links/azure-privatelink.html"),
+    "R39": ("Confluent Documentation", "Configuration reference for topics in Confluent Cloud", CC + "client-apps/topics/manage.html"),
+    "R40": ("Confluent Documentation", "Kafka cluster configuration (editable broker settings)", CC + "clusters/broker-config.html"),
+    "R41": ("Confluent Documentation", "Geo-replication with Cluster Linking on Confluent Cloud", CC + "multi-cloud/cluster-linking/index.html"),
+    "R42": ("OpenSearch Documentation", "Creating a cluster", "https://docs.opensearch.org/latest/tuning-your-cluster/index/"),
+    "R43": ("OpenSearch Documentation", "Snapshot and restore for migration", "https://docs.opensearch.org/latest/migrate-or-upgrade/snapshot-restore/"),
+    "R44": ("OpenSearch Documentation", "Is Migration Assistant right for you? (supported migration paths)", "https://docs.opensearch.org/latest/migration-assistant/is-migration-assistant-right-for-you/"),
+    "R45": ("Microsoft Learn", "Access token claims reference (Microsoft identity platform)", "https://learn.microsoft.com/en-us/entra/identity-platform/access-token-claims-reference"),
+    "R46": ("Microsoft Learn", "Azure Private Endpoint DNS configuration", "https://learn.microsoft.com/en-us/azure/private-link/private-endpoint-dns"),
+    "R47": ("External Secrets Operator", "Azure Key Vault provider", "https://external-secrets.io/latest/provider/azure-key-vault/"),
+}

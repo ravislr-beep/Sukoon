@@ -1,0 +1,23 @@
+digraph G {
+
+  graph [fontname="Liberation Sans", fontsize=11, bgcolor="white", pad="0.3", nodesep="0.35", ranksep="0.45", fontcolor="#1F3864"];
+  node  [fontname="Liberation Sans", fontsize=10, shape=box, style="rounded,filled", fillcolor="white", color="#44546A", penwidth=1.1, margin="0.14,0.07"];
+  edge  [fontname="Liberation Sans", fontsize=9, color="#44546A", fontcolor="#595959", arrowsize=0.7, penwidth=1.0];
+
+
+  rankdir=TB;
+  start [label="Select Pega to Kafka authentication", fillcolor="#DCE6F2"];
+  q1 [shape=diamond, style="filled", fillcolor="#FFF2CC", label="Is a documented\nHelm path available for\nthe mechanism in 26.1.1?", margin="0.04,0.04", fontsize=9.5];
+  q2 [shape=diamond, style="filled", fillcolor="#FFF2CC", label="Security policy forbids\nlong-lived API keys?", margin="0.04,0.04", fontsize=9.5];
+  q3 [shape=diamond, style="filled", fillcolor="#FFF2CC", label="OAUTHBEARER proven in\nPega 26.1.1 rehearsal\nwith Confluent?", margin="0.04,0.04", fontsize=9.5];
+  plain [label="SASL_SSL + PLAIN\nConfluent service-account API key\nin Key Vault, rotated by runbook\n(reference design)", fillcolor="#E2EFDA"];
+  oauth [label="SASL_SSL + OAUTHBEARER\nper Pega article for OAuthBearer", fillcolor="#E2EFDA"];
+  exc [label="Raise exception: use PLAIN with\nshort rotation interval until\nOAUTHBEARER is proven", fillcolor="#FFF2CC"];
+  start -> q1;
+  q1 -> q2 [label="PLAIN: yes\n(stream.saslMechanism)"];
+  q2 -> plain [label="No"];
+  q2 -> q3 [label="Yes"];
+  q3 -> oauth [label="Yes"];
+  q3 -> exc [label="No"];
+
+}

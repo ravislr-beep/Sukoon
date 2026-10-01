@@ -1,0 +1,23 @@
+digraph G {
+
+  graph [fontname="Liberation Sans", fontsize=11, bgcolor="white", pad="0.3", nodesep="0.35", ranksep="0.45", fontcolor="#1F3864"];
+  node  [fontname="Liberation Sans", fontsize=10, shape=box, style="rounded,filled", fillcolor="white", color="#44546A", penwidth=1.1, margin="0.14,0.07"];
+  edge  [fontname="Liberation Sans", fontsize=9, color="#44546A", fontcolor="#595959", arrowsize=0.7, penwidth=1.0];
+
+
+  rankdir=TB; nodesep=0.3; ranksep=0.3;
+  a [label="Pre-checks: Confluent topics ACLs ready, SRS healthy,\n8.8 nodes reach both privately (Section 17 chain)", fillcolor="#FFF2CC"];
+  b [label="Confirm queue processors and data flows\nto drain are RUNNING", fillcolor="#DCE6F2"];
+  c [label="Stop producers (web traffic, listeners,\nproducer data flows)", fillcolor="#DCE6F2"];
+  d [label="POST .../pzstream/migration; poll GET until\nqueueSize=0, timeToDrainMS=0, COMPLETED", fillcolor="#DCE6F2"];
+  e [label="Stop all 8.8 nodes", fillcolor="#DCE6F2"];
+  f [label="Configure 8.8 for Confluent (stream settings)\nand SRS (search settings)", fillcolor="#E4DFEC"];
+  g [label="Start all nodes; Stream landing page shows\nProvider ExternalKafka, Status NORMAL", fillcolor="#E4DFEC"];
+  h [label="Full index build through SRS (downtime);\ncheck index status per class", fillcolor="#E4DFEC"];
+  q [shape=diamond, style="filled", fillcolor="#FFF2CC", label="Smoke and search\ntests pass?", margin="0.04,0.04", fontsize=9.5];
+  ok [label="Re-open traffic; hypercare", fillcolor="#E2EFDA"];
+  rb [label="Rollback (Section 15)", fillcolor="#F8CBAD"];
+  a -> b -> c -> d -> e -> f -> g -> h -> q;
+  q -> ok [label="Yes"]; q -> rb [label="No"];
+
+}
