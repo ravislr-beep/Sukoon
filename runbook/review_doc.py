@@ -1,4 +1,4 @@
-"""Expert review report for runbook versions 2.0 and 2.1, with the corrections made in versions 2.1 and 2.2."""
+"""Expert review report for runbook versions 2.0 to 2.2, with the corrections made in versions 2.1 to 2.3."""
 import re
 import subprocess
 from pathlib import Path
@@ -12,7 +12,7 @@ HERE = Path(__file__).resolve().parent
 OUT = HERE / "out"
 NAME = "Runbook_Expert_Review"
 TITLE = "Expert review of the Pega 26.1.1 Kafka and Search Runbook"
-SHORT = "Expert review | Pega 26.1.1 Kafka and Search Runbook v2.0 to v2.2"
+SHORT = "Expert review | Pega 26.1.1 Kafka and Search Runbook v2.0 to v2.3"
 
 DIMENSIONS = [
     ["D1", "Alignment with Pega", "Every Pega requirement for external Kafka and SRS is met; nothing contradicts Pega '25 and '26 pages or the chart README", "Pega pages R3 to R22, R49 to R51; chart README R23, R24, R63"],
@@ -68,6 +68,28 @@ FINDINGS = [
     ["F-33", "D3, D15", "Medium", "Provider criteria lacked encryption at rest, HTTPS-only REST, node-to-node TLS and audit logging. OpenSearch allows plain HTTP on the REST layer.", "R76, R77", "Three rows added to the provider worksheet (Section 7.3); AS-12"],
     ["F-34", "D8, D15", "Medium", "No data tests and no data evidence in the acceptance criteria.", "v2.1 Section 14", "DT-01 to DT-12 with commands DP-1 to DP-6; AC-7; evidence item E-11; DA steps"],
     ["F-35", "D2", "Low", "TLS versions on Confluent not stated: TLS 1.3 preferred with TLS 1.2 fallback, and Dedicated clusters created before 30 April 2026 need TLS 1.3 enabled.", "R75", "Section 9.4"],
+    ["F-36", "D2, D13", "Medium", "The correction for F-08 said Confluent now enforces the limits. The same Confluent page also says the limits are not yet strictly enforced and are not a hard cutoff, and that exceeding them may cause throttling, delayed connections or unpredictable performance. The runbook stated only half of the source.", "v2.2 Section 6.3 callout and facts table; R31 re-read on 2 October 2026", "Callout states both statements; plan as if hard; RC-14 added; facts row, failure table and Section 16.1 reworded"],
+    ["F-37", "D6", "Medium", "Section 4.6 contradicted itself: the text let DEV, SIT and UAT run in fewer zones, the table required three zones for every node pool. Zones cannot be changed after a pool is created, and the zone tests run first in DEV.", "v2.2 Section 4.6; R59", "One three-zone policy for all environments; zone headroom 1.5 for PERF, PREPROD and PROD and 1.0 for DEV, SIT and UAT; headroom is now a calculator input per pool"],
+    ["F-38", "D3, D6", "Medium", "Section 7.4 relies on provider zone awareness, but the provider worksheet did not require nodes in three zones with shard allocation awareness. A provider could pass without it.", "v2.2 Section 7.3; R37", "Mandatory criterion added"],
+    ["F-39", "D11", "Medium", "Provider log export was only a scored item for metrics, and no route to a SIEM was given. Okta log streaming supports only Amazon EventBridge and Splunk Cloud, so \"log streaming to the SIEM\" was not possible for most SIEMs.", "v2.2 Sections 7.3 and 19.1; R80, R81, R82", "Mandatory criterion for metrics and logs; SIEM route table for Azure, Confluent and Okta with a test of each route; scored weights rebalanced"],
+    ["F-40", "D8", "Medium", "Tests whose behaviour no document settles had no record format and no planned response if the result was unfavourable, so a result could stop the programme with no plan.", "v2.2 Section 15", "Section 15.9: test result record and a planned response for FS-12, FS-24, FS-33, FS-34, IT-06, DT-04, DT-06 and DT-07"],
+    ["F-41", "D9", "Medium", "The workload model listed inputs but no procedure: no observation period, no rule for choosing the design peak hour, no targets to agree and no record to approve.", "v2.2 Section 16.2", "Six-step procedure and a workload model record for the business owner's approval"],
+    ["F-42", "D10", "Low", "The calculator's illustrative inputs were not mapped to the measurement that replaces each one, so the M3 sign-off condition could not be checked.", "v2.2 Section 16.9 and Appendix H", "Section 16.9.1 maps every input to a test, a method and an owner"],
+    ["F-43", "D14", "Low", "Two 36-row tables (chart keys and failure catalogue) spanned several pages; the SRS chart-default row sat between two Pega sizing rows.", "v2.2 Sections 10.3 and 15.6; Table in Section 7.4", "Chart keys split into platform and Kafka-search tables; failure catalogue split by layer; row moved and its source named"],
+    ["F-44", "D5, D15", "Low", "AC-7 needs the data security officer to accept Section 9, but the approvals table had no such role.", "v2.2 approvals table", "Role added to the approvals"],
+    ["F-45", "D3", "Low", "After the customer-managed key row was added in 2.2, the scored provider weights totalled 110.", "v2.2 Section 7.3", "Weights total 100; caption states it"],
+]
+
+RECHECK = [
+    ["F-01, F-02, F-03", "Re-rendered all ten values files with `helm template` against charts 4.13.0. Restoring the v2.0 settings reproduces the error \"Only one authentication can be enabled\", a container port of 8443 only, and the chart network policy to `elasticsearch-master:9200`.", "Upheld"],
+    ["F-05, F-06", "Re-read the SRS chart README (minimum 2 replicas, 3 as best practice; limit 1300m and 4Gi) and Pega's search sizing tables (SRS 2 CPU, 2 GB; 1 instance for testing, 3 for production).", "Upheld"],
+    ["F-08", "Re-read Confluent's cluster types page. The numeric limits are correct. The page states both stricter limits from March and June 2026 and that the limits are not yet a hard cutoff.", "Partly upheld; see F-36"],
+    ["F-10", "SLA conditions re-read: 2 eCKU on Enterprise; Dedicated multi-zone with at least 2 CKU, fixed at creation.", "Upheld"],
+    ["F-13", "Okta key rotation page: \"four times a year, but can change without notice\"; new keys published a few weeks ahead.", "Upheld"],
+    ["F-28", "Confluent self-managed keys page: fixed at creation; on Enterprise the vault must allow public access from all networks.", "Upheld"],
+    ["F-29", "AKS host encryption and disk key pages: temporary and ephemeral OS disks are encrypted only with encryption at host, set when the pool is created.", "Upheld"],
+    ["F-35", "Confluent TLS page: TLS 1.3 preferred, 1.2 fallback; Dedicated clusters created before 30 April 2026 need TLS 1.3 enabled.", "Upheld"],
+    ["All other findings", "Each cited reference opened again (HTTP 200) and the cited statement found on the page; rendered values rechecked for every Helm-related correction.", "Upheld"],
 ]
 
 CONFIRMED = [
@@ -84,17 +106,18 @@ CONFIRMED = [
 ]
 
 SCORES = [
-    ["D1", 4, 5, 5], ["D2", 3, 5, 5], ["D3", 3, 5, 5], ["D4", 2, 5, 5], ["D5", 4, 5, 5], ["D6", 3, 4, 4], ["D7", 4, 4, 5],
-    ["D8", 4, 4, 4], ["D9", 2, 4, 4], ["D10", 2, 4, 4], ["D11", 2, 4, 4], ["D12", 3, 4, 4], ["D13", 4, 5, 5], ["D14", 4, 4, 4],
-    ["D15", 1, 2, 4],
+    ["D1", 4, 5, 5, 5], ["D2", 3, 5, 4, 5], ["D3", 3, 5, 4, 5], ["D4", 2, 5, 5, 5], ["D5", 4, 5, 5, 5], ["D6", 3, 4, 4, 5],
+    ["D7", 4, 4, 5, 5], ["D8", 4, 4, 4, 5], ["D9", 2, 4, 4, 5], ["D10", 2, 4, 4, 5], ["D11", 2, 4, 4, 5], ["D12", 3, 4, 4, 5],
+    ["D13", 4, 5, 4, 5], ["D14", 4, 4, 4, 5], ["D15", 1, 2, 4, 5],
 ]
 
 OPEN_ITEMS = [
     ["Pega Support answers GQ-01 to GQ-11", "Pega LSA", "M2", "Only Pega Support can settle them; the plan follows the conservative answer until then"],
     ["Data decisions OD-14 to OD-18: Confluent keys, data class of PERF and PREPROD, topic retention, broken item retention and indexed properties, AKS encryption at host", "Security architect, data security officer", "M2, before clusters and node pools are created", "Customer key policy and data classification decide them; two cannot be changed after creation"],
     ["OpenSearch provider (OD-03)", "Enterprise architect", "M2", "Provider zone awareness, slow-log export and snapshot terms depend on it"],
-    ["DEV tests whose result no document settles: FS-12, FS-24, FS-33, FS-34, IT-06, DT-04, DT-06, DT-07", "Pega LSA, search and identity teams", "M2", "Record the result; it becomes the expected behaviour"],
-    ["Measured inputs for the sizing calculator", "Performance lead", "M3", "All example inputs are illustrative"],
+    ["DEV tests whose result no document settles: FS-12, FS-24, FS-33, FS-34, IT-06, DT-04, DT-06, DT-07", "Pega LSA, search and identity teams", "M2", "Record the result (Section 15.9); the planned response applies if it is unfavourable"],
+    ["Measured inputs for the sizing calculator (Section 16.9.1)", "Performance lead", "M3", "All example inputs are illustrative"],
+    ["SIEM connector for each log route (Section 19.2)", "Security operations", "M3", "Depends on the customer's SIEM product"],
     ["The customer's Okta token endpoint rate limit", "Identity team", "M2", "Enter in the calculator; compare with the measured token rate"],
     ["AKS network policy engine and three-zone node pools (AS-08, AS-09)", "Platform team", "Before M2", "Both are fixed when the cluster or pool is created"],
     ["Permission to reuse third-party images", "Customer legal", "Before external sharing", "Appendix G of the runbook"],
@@ -107,7 +130,7 @@ def build():
     for _ in range(4):
         d.add_paragraph()
     for text, size, color, bold in (("INDEPENDENT REVIEW", 11, GREY, True), (TITLE, 24, NAVY, True),
-                                    ("Version 2.0 reviewed and corrected as 2.1; data review of 2.1 issued as 2.2", 14, NAVY, False),
+                                    ("Version 2.0 reviewed and corrected as 2.1; data review issued as 2.2; second review issued as 2.3", 14, NAVY, False),
                                     ("2 October 2026  |  Customer Confidential", 11, GREY, False)):
         r = d.add_paragraph().add_run(text)
         r.font.size, r.font.bold = Pt(size), bold
@@ -119,16 +142,26 @@ def build():
         "have installed, Pega would have called SRS on the wrong port, and the SRS chart's own network policy would have "
         "blocked SRS from reaching OpenSearch and Okta. All three were found by rendering the values files with "
         "`helm template` against charts 4.13.0, which reading the README alone did not reveal.")
-    b.p("The other findings were gaps rather than errors: availability zone design, Confluent's enforced connection and "
+    b.p("The other findings were gaps rather than errors: availability zone design, Confluent's connection and "
         "request limits, the installer's possible need for Kafka, Okta key rotation and rate limits, OpenSearch sizing "
         "formulas, performance testing, sizing and observability. Version 2.1 corrects every finding. Seven items "
-        "remain open because only the customer, Pega Support or a DEV test can close them (Section 6).")
+        "remain open because only the customer, Pega Support or a DEV test can close them (Section 7).")
     b.p("A second review of version 2.1 looked at the data itself: what Pega puts on Kafka and into OpenSearch, how "
         "sensitive it is, and how it is protected, kept, erased and recovered. It found eleven gaps (F-25 to F-35). The most "
         "serious were three choices that are fixed when a resource is created: the Confluent encryption key mode, whose "
         "Enterprise variant needs a Key Vault reachable from all networks; AKS encryption at host, without which logs and "
         "heap dumps sit on unencrypted ephemeral disks; and the data class of the shared PERF and PREPROD services. "
         "Version 2.2 adds Section 9 to the runbook to close them.")
+    b.p("A third pass reviewed version 2.2 against all fifteen dimensions and re-checked every earlier finding against its "
+        "source (Section 5). All earlier findings were upheld except one: the correction for F-08 had stated only half of "
+        "what Confluent's page says about enforcing its limits (F-36). The pass found ten issues in total (F-36 to F-45), "
+        "none critical. They were an inconsistent zone policy for DEV, SIT and UAT, provider criteria that did not require "
+        "what the design relies on, no route from the logs to an arbitrary SIEM, and missing procedures and records for "
+        "tests, the workload model and the sizing inputs. Version 2.3 corrects all of them.")
+    b.p("With version 2.3 the document scores 5 on every dimension for document readiness (Section 6). What remains open "
+        "is not missing from the document: it is inputs that only the programme can supply, such as Pega Support answers, "
+        "customer decisions and measurements from the tests the runbook defines. Each has an owner, a milestone, a "
+        "recommended answer and a planned response (Section 7).")
     b.table(["Severity", "Meaning", "Count"], [
         ["Critical", "The deployment would fail or be insecure as written", str(sum(f[2] == "Critical" for f in FINDINGS))],
         ["High", "A likely production incident, failed test or wrong size", str(sum(f[2] == "High" for f in FINDINGS))],
@@ -146,6 +179,7 @@ def build():
         "Recalculated the sizing calculator in LibreOffice Calc and compared every output with the Python functions that produce the runbook's worked example.",
         "Ran the runbook's QA script (cross-references, decision IDs, wording) and an ID check over the built document: every scenario, test, step and command ID used is defined.",
         "Reviewed the rebuilt PDF page by page for the changed sections.",
+        "In the third pass, re-checked each earlier finding against its source by re-rendering the Helm values and re-reading every cited page, to confirm that each finding and its correction were accurate and applicable to this customer.",
     ])
 
     b.h1("Evaluation dimensions")
@@ -153,35 +187,50 @@ def build():
             caption="Evaluation dimensions", widths=[1.1, 3.4, 7, 5.1], size=8.5)
 
     b.h1("Findings and corrections")
-    b.p("F-01 to F-24 were found in version 2.0 and corrected in 2.1; F-25 to F-35 were found in 2.1 and corrected in 2.2. "
-        "The evidence column names the version where the problem was found. Section numbers in the correction column are "
-        "those of version 2.2, in which Sections 9 to 20 of version 2.1 became Sections 10 to 21.")
+    b.p("F-01 to F-24 were found in version 2.0 and corrected in 2.1; F-25 to F-35 were found in 2.1 and corrected in 2.2; "
+        "F-36 to F-45 were found in 2.2 and corrected in 2.3. The evidence column names the version where the problem was "
+        "found. Section numbers in the correction column are those of version 2.3, which are the same as in 2.2. In 2.2, "
+        "Sections 9 to 20 of version 2.1 became Sections 10 to 21.")
     b.table(["ID", "Dim.", "Severity", "Finding", "Evidence", "Correction"], FINDINGS,
             caption="Findings register", widths=[1.1, 1.2, 1.6, 5.6, 3.4, 3.7], size=7.5)
     b.h2("Confirmed as correct")
     b.p("These design points were checked and needed no change.")
     b.table(["Area", "Design point", "Source"], CONFIRMED, caption="Design points confirmed", widths=[3.6, 10.6, 2.4], size=8.5)
 
-    b.h1("Scorecard")
-    b.p("Scores are the reviewer's judgement on a five-point scale: 1 missing or wrong; 2 present with errors that would "
-        "cause failures; 3 correct but with material gaps; 4 complete for the current stage, with inputs still to be "
-        "measured; 5 complete and verified. A score of 4 after correction means the method is in place but depends on "
-        "measurements or decisions that only the programme can supply.")
-    names = {d[0]: d[1] for d in DIMENSIONS}
-    b.table(["ID", "Dimension", "2.0", "2.1", "2.2", "What limits the score"],
-            [[i, names[i], str(a), str(c), str(d), _limit(i)] for i, a, c, d in SCORES],
-            caption="Scorecard by version", widths=[1.1, 4.6, 1.3, 1.3, 1.3, 7], size=8.5)
+    b.h1("Re-check of earlier findings")
+    b.p("A finding is only useful if it is true and applies to this customer's design. Before the third pass, each earlier "
+        "finding was checked again against its evidence.")
+    b.table(["Findings", "Check made", "Result"], RECHECK, caption="Re-check of findings F-01 to F-35",
+            widths=[2.8, 11, 2.8], size=8.5)
 
-    b.h1("Items that remain open")
+    b.h1("Scorecard")
+    b.p("Scores rate the document's readiness on a five-point scale: 1 missing or wrong; 2 present with errors that would "
+        "cause failures; 3 correct but with material gaps; 4 complete, with a defect or a missing procedure that a reader "
+        "would have to work around; 5 complete, consistent, sourced and checked as far as a document can be, with every "
+        "remaining programme input owned, scheduled and given a recommended answer or planned response.")
+    b.p("Versions 2.0 to 2.2 were scored on a slightly different scale, on which 4 also covered inputs still to be "
+        "measured. The 2.2 column has been re-scored on the current scale after the re-check: D2, D3 and D13 drop to 4 "
+        "because of F-36, F-38 and F-45. The last column names the programme input that the dimension still waits for; "
+        "it does not limit the document's score.")
+    names = {d[0]: d[1] for d in DIMENSIONS}
+    b.table(["ID", "Dimension", "2.0", "2.1", "2.2", "2.3", "Programme input still to come"],
+            [[i, names[i], str(a), str(c), str(d), str(e), _limit(i)] for i, a, c, d, e in SCORES],
+            caption="Scorecard by version (document readiness)", widths=[1.1, 4.2, 1.1, 1.1, 1.1, 1.1, 6.9], size=8.5)
+    n5 = sum(r[4] == 5 for r in SCORES)
+    b.p(f"Version 2.3 scores 5 on {n5} of {len(SCORES)} dimensions. The document is ready for the approvals on its "
+        "front page. Acceptance of the deployment itself follows the criteria AC-1 to AC-7 in Section 15.8, which need "
+        "the test results.")
+
+    b.h1("Programme inputs that remain open")
     b.table(["Item", "Owner", "Needed by", "Why the document cannot close it"], OPEN_ITEMS,
-            caption="Open items after version 2.2", widths=[5.4, 3.2, 2.2, 5.8], size=8.5)
+            caption="Programme inputs open after version 2.3", widths=[5.4, 3.2, 2.2, 5.8], size=8.5)
 
     b.h1("How to repeat the checks")
     b.steps([
         "From the `runbook` folder, generate the values files and render each with `helm template` against charts 4.13.0. Every render must complete without errors.",
         "In the rendered output, check: SRS URL ends in `:8443`; no SRS NetworkPolicy from the chart; `topologySpreadConstraints` on both tiers; `JAVA_OPTS` present; SRS replicas 2 or 3.",
         "Run `python3 build_doc.py` and `python3 qa_check.py`. The build must report no missing entries and no uncited references; the QA script must report no missing sections and no wording issues.",
-        "Open the sizing calculator, replace the example inputs with measured values, and compare the outputs with Section 16.8 of the runbook.",
+        "Open the sizing calculator, replace the example inputs with the measurements in Section 16.9.1, and compare the outputs with Section 16.9 of the runbook.",
         "Before each rehearsal, recheck the vendor pages in the runbook's Section 3 and Appendix F.",
     ])
     return b
@@ -189,21 +238,21 @@ def build():
 
 def _limit(i):
     return {
-        "D1": "None, pending Pega Support answers",
-        "D2": "None",
-        "D3": "None, pending the provider choice",
-        "D4": "None; all files render",
-        "D5": "None",
-        "D6": "NP1 may run in fewer zones to save cost; provider zone features not yet known",
-        "D7": "None",
-        "D8": "Results of DEV-only tests still to be recorded",
-        "D9": "Workload model needs 8.8 production data",
-        "D10": "Inputs are illustrative until measured",
-        "D11": "Provider log export and the customer's SIEM not yet confirmed",
+        "D1": "Pega Support answers GQ-01 to GQ-11 (OD-01)",
+        "D2": "Cluster type for NP2 and PROD after PERF (OD-02)",
+        "D3": "Provider choice (OD-03), scored on the worksheet",
+        "D4": "None",
+        "D5": "Isolation test results (IT-01 to IT-10)",
+        "D6": "Region zone check for the node sizes (AS-09)",
+        "D7": "First results of the failure scenarios",
+        "D8": "Results of the tests in Section 15.9",
+        "D9": "8.8 production data for the workload model record",
+        "D10": "Measurements in Section 16.9.1",
+        "D11": "The customer's SIEM connector per route; route tests",
         "D12": "Wave dates set by the programme",
-        "D13": "None",
-        "D14": "Long technical tables in places",
-        "D15": "Pega Support answers GQ-09 to GQ-11 and the customer's key and classification decisions",
+        "D13": "Re-check of vendor pages before each rehearsal",
+        "D14": "None",
+        "D15": "Decisions OD-14 to OD-18; data tests DT-01 to DT-12",
     }[i]
 
 

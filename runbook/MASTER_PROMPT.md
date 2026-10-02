@@ -1,6 +1,6 @@
 # Master prompt: Pega Platform 26.1.1 on Azure AKS with Confluent Cloud Kafka and managed OpenSearch, built from a cloned and upgraded Pega 8.8 database
 
-Version 3.1. Use this prompt as the complete brief for producing the customer document. Every instruction in it is mandatory unless it says "should".
+Version 3.2. Use this prompt as the complete brief for producing the customer document. Every instruction in it is mandatory unless it says "should".
 
 ---
 
@@ -388,12 +388,12 @@ Write these as experience-based guidance: the symptom, the cause, how to prevent
 
 ### 6.9 Performance engineering and sizing
 
-- Why performance testing is required for this change, the workload model built from 8.8 production data, the test types (baseline, load, stress, soak, spike, backlog drain, index build, resilience under load, noisy neighbour), the harness with measurement points at every layer, entry and exit criteria, and the pitfalls seen in Pega tests.
-- Sizing rules per layer (Pega tiers, Confluent units, partitions, OpenSearch storage, shards and nodes, SRS, Okta token rate, AKS nodes with zone headroom), a worked example with illustrative inputs labelled as such, and a spreadsheet calculator with live formulas whose outputs are checked against the document.
+- Why performance testing is required for this change, the workload model built from 8.8 production data, the test types (baseline, load, stress, soak, spike, backlog drain, index build, resilience under load, noisy neighbour), the harness with measurement points at every layer, entry and exit criteria, and the pitfalls seen in Pega tests. Give a procedure for building the workload model and a record the business owner approves.
+- Sizing rules per layer (Pega tiers, Confluent units, partitions, OpenSearch storage, shards and nodes, SRS, Okta token rate, AKS nodes with zone headroom), a worked example with illustrative inputs labelled as such, and a spreadsheet calculator with live formulas whose outputs are checked against the document. Map every illustrative input to the measurement, test and owner that replace it.
 
 ### 6.10 Observability, monitoring and logging
 
-- Telemetry sources for every layer (Pega logs and GC logs, Pega Diagnostic Center, AKS, Confluent Metrics API and audit log, OpenSearch metrics and slow logs, SRS, Okta System Log, firewall), the logging design, dashboards, alerts with thresholds and severity, synthetic checks, and how to follow one incident across systems.
+- Telemetry sources for every layer (Pega logs and GC logs, Pega Diagnostic Center, AKS, Confluent Metrics API and audit log, OpenSearch metrics and slow logs, SRS, Okta System Log, firewall), the logging design, dashboards, alerts with thresholds and severity, synthetic checks, and how to follow one incident across systems. Do not assume a SIEM product: give a route from each source to any SIEM, and check what each vendor's log export actually supports.
 
 ### 6.12 Data flows, classification and protection
 
@@ -513,11 +513,13 @@ The document is complete only when every check passes. Report the result of each
 4. Every YAML block parses, every Helm key exists in the chart version stated, and every values file renders with `helm template` against that chart version. Read the rendered objects (ports, probes, network policies, jobs), not only the README: a key that exists can still produce a broken deployment.
 5. Every command has been checked for correct syntax for the tool version stated.
 6. Every question in section 3 has a findable answer. Give a traceability table from question to section.
-7. Every failure scenario has its cause, expected behaviour, detection, recovery and pass criteria filled in.
+7. Every failure scenario has its cause, expected behaviour, detection, recovery and pass criteria filled in. Every test whose expected behaviour no document settles has a planned response if the result is unfavourable.
 8. Every cloned-database item in section 4.2 has a source, an action and a time point.
 9. Every Pega or third-party figure has a source line.
 10. Every item in the data inventory (6.12) maps to a protection control, a retention rule and a data test.
 11. The reviewer checklists (section 11) are completed, and their findings are fixed or logged.
+12. Each statement taken from a vendor page gives the whole of what the page says on that point. Where the page contradicts itself, state both parts and log the conflict in the source reconciliation table.
+13. One design rule per topic: no section allows what a table in another section forbids. Provider selection criteria make mandatory everything the design relies on the provider for.
 
 ## 11. Expert review before release
 
