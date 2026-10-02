@@ -11,21 +11,24 @@ import content_b as B
 import content_c as C
 import content_d as D
 import content_e as E
+import content_f as F
+import content_g as G
 
 HERE = Path(__file__).resolve().parent
 OUT = HERE / "out"
 NAME = "Pega_26_AKS_Kafka_Search_Runbook"
-META = {"version": "1.0", "status": "Issued for customer review and approval", "date": "1 October 2026"}
+META = {"version": "2.0", "status": "Issued for customer review and approval", "date": "1 October 2026"}
 TITLE = "Pega Platform 26.1.1 on Azure AKS: Externalized Kafka and Search Runbook"
-SHORT = "Pega 26.1.1 on Azure AKS | Kafka and Search Runbook | v1.0"
+SHORT = "Pega 26.1.1 on Azure AKS | Kafka and Search Runbook | v2.0"
 TOC_LEVELS = 2
 
 SECTIONS = [
-    A.s1_exec, A.s2_scope, A.s3_evidence, A.s4_arch, A.s5_decisions, A.s6_aks,
-    B.s7_kafka, B.s8_search, B.s9_secrets,
-    C.s10_upgrade, C.s11_kafka_migration, C.s12_search_migration,
-    D.s13_deploy, D.s14_cutover, D.s15_rollback, D.s16_testing, D.s17_troubleshooting,
-    D.s18_ops, D.s19_dr, D.s20_raci, D.s21_risks, D.s22_open, D.s23_reconcile,
+    A.s1_exec, A.s2_scope, A.s3_evidence, A.s4_arch,
+    B.s5_shared, B.s6_kafka,
+    C.s7_search, C.s8_secrets,
+    D.s9_helm, D.s10_clone, D.s11_migration,
+    E.s12_deploy, E.s13_cutover, E.s14_testing,
+    F.s15_issues, F.s16_troubleshooting, F.s17_ops, F.s18_risks,
 ]
 
 
@@ -38,7 +41,7 @@ def build(labels, pages, entries, figures, tables):
     b.static_list("List of tables", tables, pages)
     for s in SECTIONS:
         s(b)
-    E.appendices(b)
+    G.appendices(b)
     return b
 
 
