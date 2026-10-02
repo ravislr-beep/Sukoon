@@ -379,14 +379,22 @@ Write these as experience-based guidance: the symptom, the cause, how to prevent
 
 ### 6.8 Operations
 
-- A monitoring table: the signal, its source (Confluent Metrics API, provider metrics, SRS logs, Pega alerts), the threshold and the response.
 - Routine tasks with frequency and owner: API key rotation, certificate renewal, partition and shard capacity review, SRS image updates, OpenSearch version updates, and cost review.
 - Onboarding a new non-production environment onto the shared services, as a numbered checklist.
 - Refreshing an environment from a new clone, as a numbered checklist.
 - Retiring an environment, as a checklist: delete the ACLs, service account, topics, consumer groups, indexes, OpenSearch role and secrets, and record evidence.
 - A RACI between the customer platform team, DBA team, Kafka team, search team, Pega team, Pega Support, Confluent and the OpenSearch provider.
 
-### 6.9 Risks, open decisions, assumptions
+### 6.9 Performance engineering and sizing
+
+- Why performance testing is required for this change, the workload model built from 8.8 production data, the test types (baseline, load, stress, soak, spike, backlog drain, index build, resilience under load, noisy neighbour), the harness with measurement points at every layer, entry and exit criteria, and the pitfalls seen in Pega tests.
+- Sizing rules per layer (Pega tiers, Confluent units, partitions, OpenSearch storage, shards and nodes, SRS, Okta token rate, AKS nodes with zone headroom), a worked example with illustrative inputs labelled as such, and a spreadsheet calculator with live formulas whose outputs are checked against the document.
+
+### 6.10 Observability, monitoring and logging
+
+- Telemetry sources for every layer (Pega logs and GC logs, Pega Diagnostic Center, AKS, Confluent Metrics API and audit log, OpenSearch metrics and slow logs, SRS, Okta System Log, firewall), the logging design, dashboards, alerts with thresholds and severity, synthetic checks, and how to follow one incident across systems.
+
+### 6.11 Risks, open decisions, assumptions
 
 - A risk register with likelihood, impact, mitigation and owner.
 - Open decisions, each with options, a recommended answer, an owner and the date by which it is needed:
@@ -463,11 +471,13 @@ Produce a Word document (DOCX) with an A4 page, a header with the short title, a
 13. Deployment runbook per environment, with numbered steps, owner, check and evidence.
 14. Production cutover and rollback (6.7).
 15. Test strategy, rehearsals and failure scenarios (6.5).
-16. Known issues and challenges (6.6).
-17. Troubleshooting, with decision trees and symptom tables.
-18. Operations, onboarding, refresh and retirement (6.8).
-19. Risks, open decisions, assumptions and source reconciliation (6.9, 7.5).
-20. **Appendices:**
+16. Performance engineering and sizing (6.9).
+17. Known issues and challenges (6.6).
+18. Troubleshooting, with decision trees and symptom tables.
+19. Observability, monitoring and logging (6.10).
+20. Operations, onboarding, refresh and retirement (6.8).
+21. Risks, open decisions, assumptions and source reconciliation (6.11, 7.5).
+22. **Appendices:**
     - A. Configuration inventory per environment.
     - B. Complete Helm values files (upgrade run and deploy run).
     - C. Command reference.
@@ -475,8 +485,9 @@ Produce a Word document (DOCX) with an A4 page, a header with the short title, a
     - E. Glossary.
     - F. References with links.
     - G. Image sources and attribution.
+    - H. Sizing calculator.
 
-Expected size: 80 to 110 pages. Diagrams must be legible when printed on A4. Code blocks must not wrap.
+Expected size: 120 to 140 pages. Diagrams must be legible when printed on A4. Code blocks must not wrap.
 
 ## 10. Acceptance checks before release
 
@@ -485,7 +496,7 @@ The document is complete only when every check passes. Report the result of each
 1. Every [Rn] resolves to the reference list, and every reference is cited at least once.
 2. Every section, figure and table cross-reference points to the right target.
 3. No banned words or patterns (section 8), and no placeholder text other than angle-bracket values listed in Appendix A.
-4. Every YAML block parses, and every Helm key exists in the chart version stated.
+4. Every YAML block parses, every Helm key exists in the chart version stated, and every values file renders with `helm template` against that chart version. Read the rendered objects (ports, probes, network policies, jobs), not only the README: a key that exists can still produce a broken deployment.
 5. Every command has been checked for correct syntax for the tool version stated.
 6. Every question in section 3 has a findable answer. Give a traceability table from question to section.
 7. Every failure scenario has its cause, expected behaviour, detection, recovery and pass criteria filled in.
