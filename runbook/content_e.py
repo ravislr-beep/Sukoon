@@ -1,407 +1,272 @@
-"""Appendices A to G."""
-from docx.shared import Pt
-
-from docx_lib import add_hyperlink, GREY
-
-
-def app_a_inventory(b):
-    b.h1("Configuration inventory", appendix="A")
-    b.p("Record every environment-specific value here before deployment and keep this appendix under change control. "
-        "The proposed values follow the naming convention used in this document; replace them only through the change process. "
-        "Environment codes used below: `dev`, `tst`, `stg`, `prd`.")
-    b.h2("Kafka and stream service")
-    b.table(["Parameter", "Where set", "Proposed value", "Recorded value and date"], [
-        ["Confluent environment and cluster ID", "Confluent Cloud", "One cluster for non-production, one for production (OD-05)", ""],
-        ["Bootstrap server", "stream.bootstrapServer; 8.8 stream settings in Release 1", "`<bootstrap-host>:9092` from the cluster settings page", ""],
-        ["Network connection", "Confluent network and Azure private endpoint", "Private Link (AD-07)", ""],
-        ["Service account", "Confluent Cloud", "`sa-pega-<env>`, one per environment", ""],
-        ["API key ID (not the secret)", "Key Vault secret `<env>-confluent-jaas`", "Key ID only in this table", ""],
-        ["Topic prefix, Release 1", "streamNamePattern", "`pega-<env>-{stream.name}`", ""],
-        ["Topic prefix, Releases 2 and 3", "stream.streamNamePattern", "`pega-<env>2-{stream.name}`", ""],
-        ["ACL prefixes", "Confluent ACLs", "Topic and group ACLs for both prefixes while both are in use", ""],
-        ["Replication factor", "stream.replicationFactor", "3", ""],
-        ["max.message.bytes", "Topic configuration", "5000000", ""],
-        ["Partition budget", "Calculation (Section 7.6)", "Measured count under each prefix plus about 100 for Hazelcast removal topics, plus 30 % headroom", ""],
-    ], widths=[4.2, 4.4, 4.6, 3.4], caption="Kafka inventory values", size=8.5)
-    b.h2("Search and SRS")
-    b.table(["Parameter", "Where set", "Proposed value", "Recorded value and date"], [
-        ["Search provider and version", "Provider contract", "A version on the SRS matrix (Section 8.2), for example OpenSearch 2.19 or Elasticsearch 8.18.3", ""],
-        ["Search endpoint", "srs.srsStorage.domain, port, protocol", "`<search-host>`, 443, https", ""],
-        ["SRS user", "Search cluster security", "`srs-<env>` with the manage cluster privilege, or settings applied manually", ""],
-        ["SRS image and tag", "srs.srsRuntime.srsImage", "search-n-reporting-service-os or search-n-reporting-service, tag from the chart README", ""],
-        ["SRS replicas", "srs.srsRuntime.replicaCount", "3 in production", ""],
-        ["customerDeploymentId, Release 1", "SRS connection on 8.8", "`<env>`", ""],
-        ["customerDeploymentId, Releases 2 and 3", "global.customerDeploymentId", "`<env>-r2`", ""],
-        ["OAuth token endpoint and JWKS URL", "pegasearch.srsAuth.url; srsRuntime.env.OAuthPublicKeyURL", "From the identity provider (OD-16)", ""],
-        ["OAuth client ID", "pegasearch.srsAuth.clientId", "One client per environment", ""],
-        ["Search snapshot repository", "Search provider", "Provider-managed snapshots, retention per backup policy", ""],
-    ], widths=[4.2, 4.4, 4.6, 3.4], caption="Search inventory values", size=8.5)
-    b.h2("Pega, AKS and Azure")
-    b.table(["Parameter", "Where set", "Proposed value", "Recorded value and date"], [
-        ["8.8 exact patch", "Source system", "From the assessment (Section 4.1)", ""],
-        ["Bridge release patch", "Installer and Pega images", "Latest '24.1 patch, 24.1.4 or later (OD-02)", ""],
-        ["Helm chart version", "Pipeline", "The chart release that supports the target Pega version", ""],
-        ["Rules and data schema names", "global.jdbc.rulesSchema, dataSchema", "Per DBA convention", ""],
-        ["Release 3 target schemas", "installer.upgrade.targetRulesSchema, targetDataSchema", "New rules schema and temporary data schema", ""],
-        ["Namespace names", "Kubernetes", "`pega-<env>`, `srs-<env>`, `platform-ops`", ""],
-        ["Key Vault name", "Azure", "One vault per environment", ""],
-        ["Container registry", "Azure", "One registry; Pega images mirrored and scanned", ""],
-        ["Private DNS zones", "Azure", "Zones for Confluent, the search provider, the database, Key Vault and the registry", ""],
-        ["Application Gateway request timeout", "Ingress annotation", "Agreed with the application team", ""],
-    ], widths=[4.2, 4.4, 4.6, 3.4], caption="Pega and platform inventory values", size=8.5)
+"""Sections 12 to 14: deployment runbook, production cutover and rollback, testing."""
+from content_a import GEN, PUB, OWN
+import envs as E
 
 
-def app_b_values(b):
-    b.h1("Consolidated Helm values skeletons", appendix="B")
-    b.p("These skeletons bring together the sections shown earlier. Key names come from the Pega Helm charts README files "
-        "[R28, R29] and the default values files in the same repository. Values in angle brackets come from Appendix A. "
-        "Secrets are never written into these files; each `external_secret_name` points to a Kubernetes secret created by the "
-        "External Secrets Operator (Section 9). Validate each file with `helm template` before use.")
-    b.h2("Pega chart, Release 3 (26.1.1)")
-    b.code('''global:
-  provider: "aks"
-  deployment:
-    name: "pega"
-  actions:
-    execute: "upgrade-deploy"            # "deploy" after the update completes
-  customerDeploymentId: "<env>-r2"
-  jdbc:
-    url: "<jdbc-url>"
-    driverClass: "<jdbc-driver-class>"
-    dbType: "<db-type>"
-    driverUri: "<driver-uri>"
-    external_secret_name: "pega-db-secret"   # keys: DB_USERNAME, DB_PASSWORD
-    rulesSchema: "<rules-schema>"
-    dataSchema: "<data-schema>"
-  docker:
-    registry:
-      url: "<acr-name>.azurecr.io"
-    imagePullSecretNames: []           # AKS pulls from ACR with the kubelet identity
-    pega:
-      image: "<acr-name>.azurecr.io/platform/pega:26.1.1"
-  tier:
-    - name: "web"
-      nodeType: "WebUser"
-      service:
-        tls:
-          enabled: true
-          external_secret_names: ["pega-tier-tls"]
-      ingress:
-        enabled: true
-        domain: "<pega-host>"
-        annotations:
-          appgw.ingress.kubernetes.io/request-timeout: "<seconds>"
-      hpa:
-        enabled: true
-      pdb:
-        enabled: true
-        minAvailable: 1
-    - name: "batch"
-      nodeType: "BackgroundProcessing,Search,Batch,RealTime,\\
-        Custom1,Custom2,Custom3,Custom4,Custom5,BIX"
-      hpa:
-        enabled: true
-      pdb:
-        enabled: true
-        minAvailable: 1
-hazelcast:
-  enabled: false
-  clusteringServiceEnabled: false
-stream:
-  enabled: true
-  bootstrapServer: "<bootstrap-host>:9092"
-  securityProtocol: SASL_SSL
-  saslMechanism: PLAIN
-  streamNamePattern: "pega-<env>2-{stream.name}"
-  replicationFactor: "3"
-  external_secret_name: "pega-stream-secret"
-pegasearch:
-  externalSearchService: true
-  externalURL: "https://srs-<env>.srs-<env>.svc.cluster.local"
-  srsAuth:
-    enabled: true
-    url: "<idp-token-endpoint>"
-    clientId: "<srs-client-id>"
-    scopes: "pega.search:full"
-    authType: "private_key_jwt"
-    privateKeyAlgorithm: "RS256"
-    external_secret_name: "pega-srs-oauth"
-installer:
-  image: "<acr-name>.azurecr.io/platform/installer:26.1.1"
-  upgrade:
-    upgradeType: "zero-downtime"
-    targetRulesSchema: "<new-rules-schema>"
-    targetDataSchema: "<temp-data-schema>"''', title="values-<env>.yaml (pega chart)")
-    b.callout("note", ["The tier list above shows only the keys this runbook changes. Copy the remaining tier keys (replicas, "
-              "resources, livenessProbe, deploymentStrategy) from the default values file of the chart version in use, then "
-              "apply the sizes from Section 6.",
-              "Check the web tier TLS keys (external_secret_names, keystore and certificate options) against the README of the "
-              "chart version deployed; they changed across chart releases [R28]."])
-    b.h2("Pega chart, Release 2 differences (bridge release)")
-    b.table(["Key", "Release 2 value", "Reason"], [
-        ["global.actions.execute", "`upgrade-deploy`, with `installer.upgrade.upgradeType: in-place`", "The copied 8.8 database is updated in place in the new environment; the 8.8 source database is not touched [R28]."],
-        ["Pega and installer images", "Bridge release tag, for example 24.1.x", "OD-02"],
-        ["hazelcast.enabled, clusteringServiceEnabled", "false, false", "Embedded Hazelcast settings; removal through the DSS (Section 10.6.2) [R8, R28]."],
-        ["stream.streamNamePattern", "`pega-<env>2-{stream.name}`", "AD-05"],
-        ["global.customerDeploymentId", "`<env>-r2`", "AD-06"],
-    ], widths=[4.4, 7, 5.2], caption="Release 2 values that differ from Release 3", size=8.5)
-    b.h2("Backingservices chart (SRS)")
-    b.code('''global:
-  k8sProvider: "aks"
-  imageCredentials:
-    registry: "<acr-name>.azurecr.io"
-srs:
-  enabled: true
-  deploymentName: "srs-<env>"
-  srsRuntime:
-    replicaCount: 3
-    # -os image for OpenSearch; search-n-reporting-service for Elasticsearch
-    srsImage: "<acr-name>.azurecr.io/platform-services/search-n-reporting-service-os:<tag>"
-    env:
-      AuthEnabled: true
-      OAuthPublicKeyURL: "<idp-jwks-url>"
-    ssl:
-      enabled: true
-      clientAuthentication: "want"
-      keystore:
-        file: "srs-keystore.p12"
-        type: "PKCS12"
-      truststore:
-        file: "srs-truststore.jks"
-        type: "JKS"
-      certsSecret: "srs-runtime-certs"
-  srsStorage:
-    provisionInternalESCluster: false
-    domain: "<search-host>"
-    port: 443
-    protocol: https
-    tls:
-      enabled: true
-    basicAuthentication:
-      enabled: true
-    authSecret: "srs-search-credentials"
-    requireInternetAccess: false
-    networkPolicy:
-      enabled: true''', title="values-<env>.yaml (backingservices chart)")
+def _steps_table(b, caption, rows, label=None):
+    b.table(["ID", "Action", "Owner", "Check", "Evidence"], rows, caption=caption,
+            widths=[1.2, 7, 2.3, 3.6, 2.5], size=8, label=label)
 
 
-def app_c_evidence(b):
-    b.h1("Evidence templates", appendix="C")
-    b.p("Each release produces an evidence pack. Store it with the change record. The templates below define what each item "
-        "contains so that reviewers can compare rehearsal and production results.")
-    b.h2("Evidence pack contents")
-    b.table(["Item", "Content", "Produced by", "Used for"], [
-        ["E-01 Values diff", "Diff of Helm values against the previous release, secrets excluded", "Platform team", "Change approval"],
-        ["E-02 Kafka connectivity", "Output of commands K-1 to K-3 from a pod in the Pega namespace", "Kafka engineer", "V-K-01"],
-        ["E-03 ACL export", "Output of the ACL list for the service account", "Kafka engineer", "V-K-02"],
-        ["E-04 Drain record", "GET responses of the Stream Migration activity until COMPLETED, with timestamps", "Pega LSA", "V-K-04"],
-        ["E-05 Stream status", "Screenshot of the Stream landing page: Provider ExternalKafka, Status NORMAL", "Pega LSA", "V-K-06"],
-        ["E-06 Topic list", "Output of K-4 and K-5 for each prefix", "Kafka engineer", "V-K-07, partition budget"],
-        ["E-07 Search connectivity", "Output of S-1 to S-3", "Search engineer", "V-S-01, V-S-02"],
-        ["E-08 Token check", "Decoded token claims (header and payload only)", "Security architect", "V-S-06"],
-        ["E-09 Index status", "Screenshot of the search landing page and output of S-4", "Pega LSA", "V-S-08 to V-S-10"],
-        ["E-10 Hazelcast checks", "hazelcast/disabled and checkRemoteExecutionConnectivity results", "Pega LSA", "H-6, H-7"],
-        ["E-11 Test report", "Smoke and regression results", "Test lead", "Go/No-Go"],
-        ["E-12 Timings", "Start and end time of each step in the release sequence", "Release manager", "Window planning"],
-    ], widths=[3.4, 6.8, 2.8, 3.6], caption="Evidence pack items", size=8.5)
-    b.h2("Validation record")
-    b.table(["Field", "Entry"], [
-        ["Check ID", "For example V-K-06"],
-        ["Environment and release", "For example stg, Release 2 rehearsal 1"],
-        ["Executed by and date", ""],
-        ["Command or screen", ""],
-        ["Expected result", "Copied from the validation matrix"],
-        ["Actual result", ""],
-        ["Result", "Pass, Fail, Pass with note"],
-        ["Evidence reference", "Evidence pack item number"],
-        ["Deviation and action", "Required if the result is not Pass"],
-    ], widths=[4.5, 12.1], caption="Validation record template", size=9, first_col_bold=True, zebra=False)
-    b.h2("Go/No-Go record")
-    b.table(["Gate", "Criteria met", "Evidence", "Decision owner", "Decision and time"], [
-        ["Gate 1: readiness", "", "", "Release manager", ""],
-        ["Gate 2: services verified", "", "", "Platform lead", ""],
-        ["Gate 3: update complete", "", "", "Pega LSA", ""],
-        ["Gate 4: business acceptance", "", "", "Business owner", ""],
-    ], widths=[3.6, 3.6, 3, 3, 3.4], caption="Go/No-Go record template", size=9, zebra=False)
+def s12_deploy(b):
+    b.h1("Deployment runbook per environment")
+    b.p("Every environment is built in the same order, with a check after each step. Shared services are created once per "
+        "group (NP1, NP2, PROD); per-environment objects are created for each environment. Values in angle brackets come "
+        "from Appendix A, and commands from Appendix C.")
+    b.h2("Build order")
+    b.table(["Phase", "Component", "Scope", "Depends on", "Owner"], [
+        ["1", "Network and DNS: private endpoint subnet, firewall rules, private DNS zones", "Per group and per environment", "Landing zone", "Cloud architect"],
+        ["2", "Key Vault, External Secrets Operator identity, Okta authorization server and client", "Per environment", "Phase 1", "Platform team, identity team"],
+        ["3", "Confluent cluster and Private Link; service account, ACLs, quota, API key", "Cluster per group; rest per environment", "Phases 1, 2", "Kafka engineer"],
+        ["4", "OpenSearch service and private endpoint; cluster settings; SRS user and role", "Service per group; user per environment", "Phases 1, 2", "Search engineer"],
+        ["5", "SRS deployment (backingservices chart)", "Per environment", "Phases 2, 4", "Search engineer"],
+        ["6", "Database clone, masking, upgrade (run U)", "Per environment", "GQ answers or conservative plan", "DBA team, platform team"],
+        ["7", "Clean-up and first start (run F), index build (run D), intake release", "Per environment", "Phases 3, 5, 6", "Pega LSA, platform team"],
+    ], caption="Build order", widths=[1.2, 6.4, 3.4, 2.8, 2.8], size=8.5)
+    b.h2("Network and DNS")
+    _steps_table(b, "Network and DNS steps", [
+        ["NW-1", "Create the private endpoint subnet with network policies for private endpoints enabled.", "Cloud architect", "Subnet exists; NSG applies", "Azure export"],
+        ["NW-2", "For a new group, complete N-1 to N-6 (Section 6.4) for its Confluent cluster.", "Kafka engineer", "K-1 to K-3 pass from a pod", "Command output"],
+        ["NW-3", "For a new group, create the OpenSearch private endpoint and DNS record as the provider documents.", "Search engineer", "S-1 resolves to a private IP and returns the version", "Command output"],
+        ["NW-4", "Add firewall rules for this environment: its own Confluent and OpenSearch endpoints, `<okta-domain>:443`, registry and Pega Diagnostic Center if used. Deny production endpoints from non-production.", "Cloud architect", "Allowed tests pass; denied tests fail (IT-09)", "Rule export, test output"],
+        ["NW-5", "Apply Kubernetes network policies: deny by default; allow pega to srs, srs to the OpenSearch endpoint, pods to DNS.", "Platform team", "Test pod cannot reach a denied target", "Test output"],
+    ])
+    b.h2("Secrets and identity")
+    _steps_table(b, "Secrets and identity steps", [
+        ["SI-1", "Create `kv-pega-<code>` with RBAC, private endpoint and public access disabled.", "Platform team", "Reachable from the spoke only", "Test output"],
+        ["SI-2", "Create the workload identity for the External Secrets Operator in `pega-<code>` and `srs-<code>`; grant Key Vault Secrets User on this vault only.", "Platform team", "SecretStore Ready", "kubectl output (P-4)"],
+        ["SI-3", "Create the Okta client `pega-srs-<code>` and register its public key (Section 7.6); store the private key in Key Vault.", "Identity team", "Token request succeeds (O-1)", "Decoded claims (O-2)"],
+        ["SI-4", "Create the ExternalSecrets in Section 8.2.", "Platform team", "All secrets SecretSynced", "kubectl output"],
+    ])
+    b.h2("Confluent Cloud")
+    _steps_table(b, "Confluent Cloud steps", [
+        ["CC-1", "For a new group, create the cluster (type per OD-02) in the AKS region with Private Link.", "Kafka engineer", "Cluster status Up", "Cluster ID"],
+        ["CC-2", "Create service account `sa-pega-<code>` and the four ACLs (Section 6.5).", "Kafka engineer", "ACL list matches {ref:tab_acls} (K-7)", "ACL export"],
+        ["CC-3", "Create an API key for the service account; write the JAAS value to `kv-pega-<code>` as `confluent-jaas`.", "Kafka engineer", "Secret version exists; key not in any file or ticket", "Secret metadata"],
+        ["CC-4", "In NP1 and NP2, create the client quota for the service account (OD-09).", "Kafka engineer", "Quota listed", "Quota export"],
+        ["CC-5", "Run IT-01 to IT-04 against the other environments in the group.", "Kafka engineer", "All denied", "Test output"],
+    ])
+    b.h2("OpenSearch")
+    _steps_table(b, "OpenSearch steps", [
+        ["OS-1", "For a new group, provision the OpenSearch service (OD-03) at the size in Section 7.4, version 2.15 or 2.19.", "Search engineer", "S-1 shows the version; S-2 green", "Output"],
+        ["OS-2", "For a new group, apply the cluster settings in Section 7.4 as administrator.", "Search engineer", "S-3 shows both settings", "Output"],
+        ["OS-3", "Create the SRS user for this environment and map it to the index-scoped role `pega26-<code>-srs` (Section 7.5).", "Search engineer", "User can create and delete `pega26-<code>-test`; cannot touch another prefix", "Test output"],
+        ["OS-4", "Store the SRS user credentials in `kv-pega-<code>`.", "Search engineer", "Secret synced to `srs-<code>`", "kubectl output"],
+    ])
+    b.h2("SRS")
+    _steps_table(b, "SRS steps", [
+        ["SR-1", "Create the SRS TLS keystore and truststore and store them in Key Vault.", "Platform team", "Secret `srs-runtime-certs` synced", "kubectl output"],
+        ["SR-2", "Deploy SRS: `helm upgrade --install srs-<code> pega/backingservices -n srs-<code> -f backingservices-<code>.yaml`.", "Search engineer", "SRS pods Ready (P-1)", "Output"],
+        ["SR-3", "From a pod in `pega-<code>`, call the SRS service with and without a token.", "Search engineer", "Without token refused; with token accepted (S-5)", "Output"],
+    ])
+    b.h2("Database clone and upgrade")
+    _steps_table(b, "Database clone and upgrade steps", [
+        ["DB-1", "For non-production, take the clone from the agreed production copy; for PROD, take the final clone at cutover step C-3.", "DBA team", "Clone restored; row counts recorded", "Clone record"],
+        ["DB-2", "Mask the clone (non-production) per OD-07.", "DBA team", "Masking report", "Report"],
+        ["DB-3", "Apply any pre-upgrade condition from Pega Support (GQ-02, GQ-03) and the time-point B items in {ref:tab_inventory}.", "DBA team, Pega LSA", "Each item signed off", "Clean-up record"],
+        ["DB-4", "Run U: `helm upgrade --install pega pega/pega -n pega-<code> -f pega-<code>-upgrade.yaml --version 4.13.0`.", "Platform team", "Installer job completed (P-5)", "Installer log, duration"],
+        ["DB-5", "If the installer job fails, read the log, fix the cause, and follow Pega's guidance for rerunning the upgrade on this database. If in doubt, restore the clone and start again from DB-1 (FS-26).", "Platform team, DBA", "Rerun completes", "Incident record"],
+    ])
+    b.h2("First start, index build and intake release")
+    b.p("Follow the first-start control in Section 10.4 (steps ST-1 to ST-9). The Helm commands are:")
+    b.code("""# Run F: web tier only, batch tier held at zero
+helm upgrade --install pega pega/pega -n pega-<code> -f pega-<code>-first.yaml \\
+  --version 4.13.0
+# Run D: steady state, batch tier at normal size (starts queue processing)
+helm upgrade --install pega pega/pega -n pega-<code> -f pega-<code>-deploy.yaml \\
+  --version 4.13.0""", title="Helm commands for runs F and D")
+    b.h2("Per-environment notes")
+    b.table(["Environment", "Built from", "Masked", "Shared group", "Notes"], [
+        ["DEV", "Production copy", "Yes", "NP1", "First build. Proves the Okta claim design, the index-scoped role, DSS precedence and the full path; finds the cluster messaging topics."],
+        ["SIT", "Production copy (can be the DEV clone)", "Yes", "NP1", "First environment with integrations to test systems; data set register applied."],
+        ["UAT", "Recent production copy", "Yes", "NP1", "Business tests on search over masked data."],
+        ["PERF", "Full-size production copy", "Yes", "NP2", "Load tests, partition and index build measurements; sets PROD sizes."],
+        ["PREPROD", "Most recent full-size production copy", "Per policy", "NP2", "Rehearsal 1 and Rehearsal 2 of the production cutover, run by the cutover team."],
+        ["PROD", "Final clone at cutover", "No", "PRD", "Section 13."],
+    ], caption="Per-environment notes", widths=[2.2, 3.6, 1.6, 2, 7.2], size=8.5)
 
 
-def app_d_commands(b):
-    b.h1("Command reference", appendix="D")
-    b.p("Run these commands from a tooling pod in the Pega namespace, so they use the same network path, DNS and egress rules "
-        "as Pega. Use an image mirrored into the customer registry. Read secrets from Key Vault at run time and do not leave them "
-        "in shell history. Check option names against the installed tool version before use.")
-    b.h2("Kafka and Confluent Cloud")
-    b.code('''# K-1 DNS: the bootstrap host must resolve to a private IP
-nslookup <bootstrap-host>
-
-# K-2 TLS: certificate chain and protocol
-openssl s_client -connect <bootstrap-host>:9092 -servername <bootstrap-host> </dev/null
-
-# K-3 Authentication and metadata (kcat)
-kcat -b <bootstrap-host>:9092 -X security.protocol=SASL_SSL -X sasl.mechanisms=PLAIN \\
-  -X sasl.username="$API_KEY" -X sasl.password="$API_SECRET" -L
-
-# K-4 Topics under a prefix (Confluent CLI)
-confluent kafka topic list --cluster <lkc-id> | grep "pega-<env>2-"
-
-# K-5 Partition count under a prefix
-kcat -b <bootstrap-host>:9092 -X security.protocol=SASL_SSL -X sasl.mechanisms=PLAIN \\
-  -X sasl.username="$API_KEY" -X sasl.password="$API_SECRET" -L -J \\
-  | jq --arg p "pega-<env>2-" \\
-    '[.topics[] | select(.topic | startswith($p)) | .partitions | length] | add'
-
-# K-6 Topic configuration
-confluent kafka topic describe <topic> --cluster <lkc-id>
-confluent kafka topic update <topic> --config max.message.bytes=5000000 \\
-  --cluster <lkc-id>
-
-# K-7 ACLs for the service account
-confluent kafka acl list --service-account <sa-id> --cluster <lkc-id>''', title="Kafka commands")
-    b.h2("Pega stream migration")
-    b.p("Pega documents these requests against a local Pega instance [R15]. Send them from inside the Pega pod (for example "
-        "with kubectl exec) or adjust the host to reach one node. Authenticate as the Pega documentation describes for the "
-        "release in use.")
-    b.code('''# Start the drain
-curl --request POST \\
-  http://localhost:8080/prweb/PRRestService/CloudRemoteAPI/v1/pzstream/migration
-# Check status. The drain is complete when queueSize is 0, timeToDrainMS is 0
-# and migrationStatus is COMPLETED
-curl --request GET \\
-  http://localhost:8080/prweb/PRRestService/CloudRemoteAPI/v1/pzstream/migration
-# Restart Kafka queues (only when switching between two external Kafka providers)
-curl --request DELETE \\
-  http://localhost:8080/prweb/PRRestService/CloudRemoteAPI/v1/pzstream/migration''',
-           title="Stream Migration activity [R15]")
-    b.h2("Search and SRS")
-    b.code('''# S-1 Version of the search cluster
-curl -s -u "$SRS_USER:$SRS_PASSWORD" https://<search-host>/
-
-# S-2 Cluster health
-curl -s -u "$SRS_USER:$SRS_PASSWORD" "https://<search-host>/_cluster/health?pretty"
-
-# S-3 Settings required by SRS
-curl -s -u "$SRS_USER:$SRS_PASSWORD" "https://<search-host>/_cluster/settings?pretty"
-
-# S-4 Indexes under a customerDeploymentId prefix
-curl -s -u "$SRS_USER:$SRS_PASSWORD" \\
-  "https://<search-host>/_cat/indices/<deployment-id>*?v"
-
-# S-5 TLS to SRS from the Pega namespace
-openssl s_client -connect srs-<env>.srs-<env>.svc.cluster.local:<srs-port> </dev/null''', title="Search commands")
-    b.h2("Kubernetes")
-    b.code('''# P-1 Pod status
-kubectl get pods -n pega-<env> -o wide
-
-# P-2 Pod logs (stream and search errors)
-kubectl logs -n pega-<env> <pod> --since=30m | grep -Ei "stream|kafka|srs|search"
-
-# P-3 Rolling restart of a tier
-kubectl rollout restart deployment/<tier-deployment> -n pega-<env>
-kubectl rollout status deployment/<tier-deployment> -n pega-<env>
-
-# P-4 External secret synchronization
-kubectl get externalsecret -n pega-<env>
-kubectl describe externalsecret pega-stream-secret -n pega-<env>
-
-# P-5 Installer job logs
-kubectl get jobs -n pega-<env>
-kubectl logs -n pega-<env> job/<installer-job> -f''', title="Kubernetes commands")
-    b.h2("Token inspection")
-    b.code('''# Decode the JWT payload without verifying it.
-# Do not paste production tokens into web tools.
-python3 - "$TOKEN" <<'EOF'
-import base64, json, sys
-payload = sys.argv[1].split(".")[1]
-payload += "=" * (-len(payload) % 4)
-print(json.dumps(json.loads(base64.urlsafe_b64decode(payload)), indent=2))
-EOF''',
-           title="Decode token claims for V-S-06")
-    b.h2("Hazelcast removal checks")
-    b.p("These checks run from Dev Studio, not from the command line. Open Records > Integration-Resources > Service Package, "
-        "open HazelcastDecommission, and in the Methods section run the hazelcast/disabled resource with the GET method and the "
-        "current requestor context. The expected answer is true. Then run checkRemoteExecutionConnectivity from the same "
-        "package and confirm that all nodes are reachable [R8].")
+def s13_cutover(b):
+    b.h1("Production cutover and rollback")
+    b.h2("Principles")
+    b.bullets([
+        "The 8.8 system and its database are not changed by the cutover, apart from stopping 8.8. They stay available for rollback until the rollback window closes.",
+        "Every step was run at least twice in PREPROD with production-sized data, by the people who will run it in production.",
+        "The outage window comes from the rehearsal measurements plus 25 % contingency, not from estimates.",
+        "Rollback is free of data loss until intake is released on 26.1.1. After that, rollback loses work done on 26.1.1, so the business decides.",
+    ])
+    b.h2("Milestones")
+    b.table(["Milestone", "Content", "Exit criteria"], [
+        ["M1 Design approval", "This document approved; open decisions owned", "Signatures on the approvals page"],
+        ["M2 DEV build", "First environment from a clone", "First-start Go/No-Go passed; Okta, role and DSS tests recorded"],
+        ["M3 PERF measurements", "Load tests, partitions, index build time", "PROD sizes and cluster type agreed (OD-02)"],
+        ["M4 Rehearsal 1 (PREPROD)", "Full cutover sequence with timings", "All steps completed; defects logged"],
+        ["M5 Rehearsal 2 (PREPROD)", "Full cutover sequence by the cutover team", "Timing fits the window; no open severity 1 or 2 defects"],
+        ["M6 Go/No-Go 1 and production cutover", "Section 13.3", "Go/No-Go 3 passed"],
+    ], caption="Programme milestones used in this document", widths=[4, 6, 6.6], size=9)
+    b.h2("Cutover sequence")
+    b.figure(GEN + "fig_cutover_timeline.png", "Production cutover sequence from the Kafka and search point of view", OWN, width_cm=16.5)
+    b.table(["Step", "Action", "Owner", "Duration from", "Evidence"], [
+        ["C-1", "Hold intake on 8.8: block user access, stop inbound listeners and services, disable job schedulers that create work.", "Application team", "Rehearsal", "Change record"],
+        ["C-2", "Let queue processors finish. Record the count of items ready to process (must be zero) and the count of broken items per queue processor from Admin Studio. Record the last committed offset of each application Kafka data set consumer.", "Pega LSA", "Rehearsal", "Screenshots, offset list"],
+        ["C-3", "Stop 8.8. Take the final clone (DB-1).", "DBA team", "Rehearsal", "Clone record"],
+        ["C-4", "Run U on the clone (DB-3, DB-4).", "Platform team", "Rehearsal", "Installer log"],
+        ["C-5", "Apply time-point A clean-up; run F; time-point F checks (ST-2 to ST-6).", "Pega LSA", "Rehearsal", "Clean-up record, screenshots"],
+        ["C-6", "Go/No-Go at first start ({ref:fig_gonogo}).", "Cutover manager", "Fixed", "Gate record"],
+        ["C-7", "Run D; full index build; completeness and count checks (ST-7, ST-8).", "Pega LSA", "Rehearsal", "Count sheet"],
+        ["C-8", "Application Kafka data sets cutover (Section 13.5).", "Application team", "Rehearsal", "Offset evidence"],
+        ["C-9", "Smoke tests; Go/No-Go 2.", "Test lead", "Rehearsal", "Test report, gate record"],
+        ["C-10", "Switch public DNS to Application Gateway; release intake (ST-9); Go/No-Go 3 after 30 minutes.", "Platform team", "DNS TTL", "DNS change record"],
+    ], caption="Production cutover steps", widths=[1.1, 8.4, 2.5, 2, 2.6], size=8.5)
+    b.callout("important", "Lower the TTL of the public DNS record to 300 seconds at least 48 hours before cutover, so a DNS switch "
+              "or revert takes effect quickly. Restore the normal TTL after hypercare.")
+    b.h2("Go/No-Go gates")
+    b.table(["Gate", "When", "Criteria", "Decision owner"], [
+        ["Go/No-Go 1", "Seven days before", "Two PREPROD rehearsals passed; window fits with 25 % contingency; Pega Support answers received or conservative plan accepted; rollback rehearsed", "Business owner with platform lead"],
+        ["First-start gate", "After C-5", "All checks in {ref:fig_gonogo} up to the index build", "Cutover manager"],
+        ["Go/No-Go 2", "After C-9", "Index build complete and counts match; application data sets started at agreed offsets; smoke tests pass", "Cutover manager"],
+        ["Go/No-Go 3", "30 minutes after C-10", "No severity 1 or 2 incidents; queue backlog falling; search response within target", "Cutover manager with business owner"],
+    ], caption="Go/No-Go gates", widths=[2.6, 3, 8.2, 2.8], size=9)
+    b.h2("Application Kafka data set cutover")
+    b.steps([
+        "At C-2, record the last committed offset of each 8.8 consumer group that reads the customer's Kafka topics (K-8 on the customer's cluster).",
+        "For data sets that keep the same cluster and topic, configure the 26.1.1 data flow to start from the recorded offset, or reuse the same consumer group if the application team confirms it, so no message is skipped or processed twice.",
+        "For data sets that move to a new cluster without history, start from new records only, and keep the 8.8 offset list as evidence of what was processed.",
+        "For data sets mirrored with Cluster Linking, promote the mirror topics at cutover; Cluster Linking keeps offsets [R35].",
+        "Record the first offset processed by 26.1.1 for each data set and compare with step 1.",
+    ])
+    b.h2("Rollback")
+    b.table(["Step", "Action"], [
+        ["RB-1", "Declare rollback; record the reason and the time."],
+        ["RB-2", "Hold intake on 26.1.1. If intake was released, export the list of cases created or changed on 26.1.1 for reconciliation."],
+        ["RB-3", "Revert public DNS to 8.8."],
+        ["RB-4", "Start 8.8 on its untouched database. Its embedded Kafka and embedded Elasticsearch were stopped, not changed."],
+        ["RB-5", "Check the 8.8 stream and search landing pages and queue processors; release 8.8 intake."],
+        ["RB-6", "Reset application Kafka data set consumers on 8.8 to the offsets agreed for the rollback."],
+        ["RB-7", "Scale 26.1.1 to zero; keep it and its Kafka topics and indexes for analysis."],
+    ], caption="Rollback steps", widths=[1.4, 15.2], size=9)
+    b.p("The point after which rollback loses work is C-10, when intake is released on 26.1.1. Before C-10, rollback loses "
+        "nothing. After C-10, cases created or changed on 26.1.1 are not in the 8.8 database, and messages produced to "
+        "application Kafka topics by 26.1.1 have been consumed downstream. The business owner decides at that point between "
+        "rollback with reconciliation and fixing forward, using the reconciliation list from RB-2.")
 
 
-GLOSSARY = [
-    ("ACL", "Access control list. In Kafka, a rule that allows a principal an operation on a resource such as a topic or consumer group."),
-    ("AKS", "Azure Kubernetes Service."),
-    ("Bridge release", "The intermediate Pega release (latest '24.1 patch) used to remove Hazelcast before the update to 26.1.1."),
-    ("CKU, eCKU", "Confluent Unit for Kafka, the capacity unit of Dedicated clusters; elastic CKU for Enterprise clusters."),
-    ("CodeSet", "A Pega rule that groups Java libraries imported into Pega Platform."),
-    ("customerDeploymentId", "The ID that SRS uses to separate the data of each Pega environment. It becomes the index prefix."),
-    ("Data set (Kafka)", "A Pega rule that reads from or writes to a Kafka topic for an application integration. It is separate from the stream service."),
-    ("DSS", "Dynamic System Setting, a Pega configuration record."),
-    ("External Secrets Operator", "A Kubernetes operator that copies secrets from an external store such as Azure Key Vault into Kubernetes secrets."),
-    ("Hazelcast", "The in-memory clustering library used by Pega Platform up to '24.2, removed in '25."),
-    ("Helm", "The package manager for Kubernetes used to deploy the Pega charts."),
-    ("Jakarta EE", "The successor to Java EE. Tomcat 10.1 uses jakarta.* package names instead of javax.*."),
-    ("JAAS", "Java Authentication and Authorization Service. The Kafka client reads its SASL credentials from a JAAS configuration string."),
-    ("JWKS", "JSON Web Key Set, the published public keys that SRS uses to check token signatures."),
-    ("Private Link", "Azure service that exposes a service through a private IP in the customer VNet."),
-    ("Queue processor", "A Pega rule that processes queued items asynchronously through the stream service."),
-    ("SASL_SSL", "Kafka security protocol that combines TLS encryption with SASL authentication."),
-    ("SRS", "Search and Reporting Service, the Pega backing service between Pega Platform and the search cluster."),
-    ("Stream service", "The Pega service that uses Kafka for queue processors, job schedulers and data flows."),
-    ("streamNamePattern", "Helm setting that defines how Pega names its Kafka topics; it carries the environment prefix."),
-    ("Zero-downtime update", "Pega update type that moves rules into a new schema and performs a rolling reboot, so users keep working during the update."),
-]
-
-
-def app_e_glossary(b):
-    b.h1("Glossary", appendix="E")
-    b.table(["Term", "Meaning"], [[t, m] for t, m in GLOSSARY], widths=[3.8, 12.8], caption="Glossary of terms", size=9, first_col_bold=True)
-
-
-def app_f_references(b):
-    b.h1("References", appendix="F")
-    b.p("Sources were read on the evidence cut-off date in the document control table. Vendor pages change; check each "
-        "linked page before a release.")
-    for key in sorted(b.refs, key=lambda k: int(k[1:])):
-        publisher, title, url = b.refs[key]
-        para = b.doc.add_paragraph()
-        para.paragraph_format.space_after = Pt(4)
-        para.paragraph_format.left_indent = Pt(34)
-        para.paragraph_format.first_line_indent = Pt(-34)
-        r = para.add_run(f"[{key}]\t")
-        r.bold = True
-        r.font.size = Pt(9.5)
-        r = para.add_run(f"{publisher}. {title}. ")
-        r.font.size = Pt(9.5)
-        add_hyperlink(para, url, url, size=8.5)
-
-
-IMAGE_SOURCES = [
-    ("pega_docs_pega-platform-architecture.png", "Pega Documentation", "R23"),
-    ("pega_academy_external_services.png", "Pega Academy", "R35"),
-    ("pega_docs_kafka-use-cases.jpg", "Pega Documentation", "R13"),
-    ("confluent_azure_privatelink.png", "Confluent Documentation", "R38"),
-    ("confluent_azure_dns_records.png", "Confluent Documentation", "R38"),
-    ("pega_academy_three_node.png", "Pega Academy", "R36"),
-    ("pega_academy_srs_cloud_deployment.png", "Pega Academy", "R34"),
-    ("opensearch_cluster.png", "OpenSearch Documentation", "R42"),
-    ("ZDT schema images (five, combined)", "Pega Helm charts, GitHub (Apache License 2.0)", "R33"),
-    ("pega_docs_stream-migration-external-kafka-status.png", "Pega Documentation", "R15"),
-]
-
-
-def app_g_images(b):
-    b.h1("Image sources and attribution", appendix="G")
-    b.p("Figures marked \"Prepared for this implementation\" were drawn for this document from the facts cited in the "
-        "surrounding text. The other figures are reproduced from the public sources below, unchanged except for scaling, and "
-        "the combination and numbering of the five zero-downtime schema images.")
-    b.table(["Image", "Publisher", "Source page"], [[f, p, f"[{r}]"] for f, p, r in IMAGE_SOURCES],
-            widths=[7.6, 6, 3], caption="Third-party images", size=9)
-    b.callout("important", "Pega, Pega Academy, Confluent and OpenSearch content is subject to the publishers' terms of use. "
-              "Before this document is distributed outside the customer and implementation teams, confirm that reuse of these "
-              "images is permitted, or replace them with links to the source pages.")
-
-
-def appendices(b):
-    app_a_inventory(b)
-    app_b_values(b)
-    app_c_evidence(b)
-    app_d_commands(b)
-    app_e_glossary(b)
-    app_f_references(b)
-    app_g_images(b)
+def s14_testing(b):
+    b.h1("Test strategy, rehearsals and failure scenarios")
+    b.h2("Test stages")
+    b.table(["Stage", "Entry criteria", "Environment", "Owner", "Evidence"], [
+        ["Connectivity", "Network, DNS and secrets steps done", "Every environment", "Platform team", "K-1 to K-3, S-1 to S-3, O-1 outputs"],
+        ["Configuration", "Run F complete", "Every environment", "Pega LSA", "Landing page screenshots; inventory sign-off"],
+        ["Functional", "Run D and index build complete", "DEV, SIT, UAT", "Test lead", "Checks in Section 14.4"],
+        ["Isolation", "Two environments in a group running", "NP1, NP2", "Security architect", "IT-01 to IT-10 records"],
+        ["Performance", "PERF built at full size", "PERF", "Performance lead", "PT-01 to PT-04 reports"],
+        ["Resilience and failure", "Performance baseline recorded", "PERF, PREPROD", "Platform team", "Failure catalogue records (Section 14.6)"],
+        ["Security", "Isolation tests passed", "SIT, PREPROD", "Security architect", "No public endpoints; secret scan of values; token claim checks; TLS versions"],
+        ["Operational acceptance", "Monitoring live", "PREPROD", "Operations lead", "Alerts reach on-call; runbooks used by operations staff"],
+        ["Full rehearsal", "All above passed", "PREPROD (twice)", "Cutover manager", "Timed cutover record (Appendix D)"],
+    ], caption="Test stages", widths=[2.8, 4, 2.6, 2.8, 4.4], size=8.5)
+    b.h2("Rehearsals and measurements")
+    b.p("Rehearse the full clone-and-upgrade path at least twice in PREPROD on production-sized data before production. "
+        "Record each measurement against data volume, because they set the production window.")
+    b.table(["Measurement", "Steps", "Used for", "Rehearsal 1", "Rehearsal 2"], [
+        ["Drain time on 8.8", "C-1 to C-2", "Window", "", ""],
+        ["Clone time", "C-3", "Window", "", ""],
+        ["Upgrade time", "C-4", "Window", "", ""],
+        ["Clean-up time", "C-5", "Window", "", ""],
+        ["First start time", "ST-3 to ST-6", "Window", "", ""],
+        ["Full index build time", "ST-7 to ST-8", "Window; OpenSearch sizing", "", ""],
+        ["Time to release intake", "C-9 to C-10", "Window", "", ""],
+        ["Partitions created", "K-5", "Confluent capacity", "", ""],
+        ["Searchable data volume", "S-4", "OpenSearch sizing", "", ""],
+    ], caption="Rehearsal measurements", widths=[4, 3, 4, 2.8, 2.8], size=9)
+    b.h2("Isolation tests")
+    b.p("Each test uses environment A's credentials against environment B in the same group, and must be refused. Run them "
+        "in NP1 and NP2 after every new environment joins a group.")
+    b.table(["ID", "Test", "Method", "Pass criteria"], [
+        ["IT-01", "Read and write B's topics with A's key", "kcat produce and consume to `pega-<B>-<topic>` with A's credentials", "Authorization error"],
+        ["IT-02", "Create and delete topics under B's prefix", "`confluent kafka topic create` and `delete` as A", "Refused"],
+        ["IT-03", "Join or reset B's consumer group", "kcat consumer with group `pega-<B>-...`", "Authorization error"],
+        ["IT-04", "Use A's key from B's namespace", "Check B's Key Vault and secrets contain no A key", "Not present"],
+        ["IT-05", "Index names after the build", "S-4 for `pega26-<A>*`; list all indexes", "A's indexes all carry A's prefix; none outside a known prefix"],
+        ["IT-06", "A's SRS user on B's indexes; SRS works with the scoped role", "Search, write and delete on `pega26-<B>*` as A's user; full build as A", "Refused on B; A's build succeeds"],
+        ["IT-07", "A's token at B's SRS", "Send a request to B's SRS with A's token", "Refused (guid mismatch)"],
+        ["IT-08", "A's External Secrets identity on B's vault", "Create a test ExternalSecret in A pointing at B's vault", "Access denied"],
+        ["IT-09", "Non-production pod to production endpoints", "From a pod in NP1 and NP2: DNS and TCP to cc-prd, os-prd and production integration hosts", "No private resolution; connection refused by firewall"],
+        ["IT-10", "Cloned environment to production integrations", "Firewall log review during run F and the first day of run D", "No connection attempts to production systems"],
+    ], caption="Isolation tests", widths=[1.3, 4.2, 6.4, 4.7], size=8.5)
+    b.h2("Functional and integration checks")
+    b.bullets([
+        "Queue a test item to a test queue processor and confirm it is processed; repeat after every deployment.",
+        "Run a job scheduler with a test activity and confirm it runs on the batch tier.",
+        "Create a case, wait for indexing, and find it with case search; repeat for each class with custom search properties (CD-14).",
+        "Run each report that depends on search and compare with the 8.8 baseline on the same clone data.",
+        "For each application Kafka data set in SIT, run its data flow against the test topic and compare counts.",
+        "Check the produce path with a message near 5,000,000 bytes, if the application produces large messages (FS-06).",
+    ])
+    b.h2("Performance tests")
+    b.table(["ID", "Test", "Target", "Measured"], [
+        ["PT-01", "Peak user load plus peak queue processor load in PERF", "Agreed response times; consumer lag returns to baseline after peak", ""],
+        ["PT-02", "Full index build throughput", "Fits the production window after scaling (Section 7.8)", ""],
+        ["PT-03", "Quota enforcement: PERF load while PREPROD runs a light test", "PREPROD response unchanged; PERF throttled at its quota", ""],
+        ["PT-04", "Consumer lag under peak per queue processor", "Lag within the alert threshold", ""],
+    ], caption="Performance tests", widths=[1.3, 6.6, 6, 2.7], size=9)
+    b.h2("Failure scenario catalogue")
+    b.p("{ref:tab_fail} lists the failures to test. Run Kafka, search and platform scenarios in PERF or PREPROD, and "
+        "clone-specific scenarios in DEV during the first build and again in PREPROD. Where Pega does not document the exact "
+        "behaviour, record what happens in the first run; that record becomes the expected result for later runs.")
+    rows = [
+        ["FS-01", "Kafka bootstrap unreachable", "Block 9092 to the Confluent endpoints with a network policy", "Queue processing and cluster messaging stop; Stream landing page not NORMAL", "Stream landing page; Pega log Kafka connection errors; alert", "Remove the block; pods reconnect or restart", "Processing resumes; no item lost"],
+        ["FS-02", "Zonal private DNS record missing", "Remove one zonal record in DEV", "Some broker connections fail after bootstrap", "K-3 shows a broker resolving publicly or not at all", "Restore the record", "All broker names resolve privately"],
+        ["FS-03", "API key revoked", "Delete the environment's API key in DEV", "Authentication failures; stream down", "Pega log SASL errors; Confluent audit log", "Create a key; update Key Vault; restart tiers", "Stream NORMAL within the rotation time"],
+        ["FS-04", "ACL missing for a new topic", "Remove the TOPIC prefixed ACL briefly in DEV", "Topic creation or access refused", "Authorization errors in Pega log", "Restore the ACL; add literal ACLs for unprefixed topics", "All topics accessible"],
+        ["FS-05", "Partition limit reached", "Lower the cluster headroom in a sandbox or simulate with a test topic set", "New topic creation fails", "Confluent error; Pega log", "Delete unused topics or add capacity", "New queue processor starts"],
+        ["FS-06", "Message larger than max.message.bytes", "Produce a 6 MB test message through a test queue processor", "Producer error for that item", "RecordTooLargeException in Pega log", "Set topic to 5,000,000; keep messages within it [R11]", "Item within limit processed"],
+        ["FS-07", "Broker rolling restart during Confluent maintenance", "Observe a scheduled maintenance in PERF", "Short retries; no loss", "Confluent notice; brief lag rise", "None", "No broken items caused"],
+        ["FS-08", "Consumer lag builds under load", "PT-04 at 150 % of peak", "Lag grows then drains", "Lag alert", "Add batch pods within partition count", "Lag back to baseline"],
+        ["FS-09", "One SRS pod lost", "Delete one SRS pod in PERF", "Searches continue on other pods", "Pod restart event", "Kubernetes recreates it", "No search errors seen by users"],
+        ["FS-10", "Whole SRS deployment lost", "Scale SRS to zero in PERF", "Search and indexing fail; other functions continue", "Search errors; SRS alert", "Scale back; check indexing backlog clears", "Backlog cleared; counts match"],
+        ["FS-11", "Okta token cannot be obtained", "Block `<okta-domain>` at the firewall for the environment", "Search fails once the current token expires", "Pega log token errors", "Restore the rule", "Search resumes without restart, or with restart recorded"],
+        ["FS-12", "Token from the wrong issuer", "Configure a test client on another authorization server", "SRS refuses if it checks issuer; record result", "SRS log", "Use the right server", "Behaviour recorded in Section 18.4"],
+        ["FS-13", "`guid` does not match customerDeploymentId", "Change the claim value for the DEV client", "SRS refuses requests", "401 or 403 in SRS log", "Restore the claim", "Search resumes"],
+        ["FS-14", "Client key rotated in Okta but not in Key Vault", "Remove the current public key from the DEV client", "Token requests fail", "Okta system log; Pega log", "Register the key or update Key Vault and restart", "Search resumes"],
+        ["FS-15", "OpenSearch status yellow", "Stop one data node (provider tooling) in PERF", "Searches continue", "S-2 yellow; alert", "Provider restores the node", "Green; no Pega errors"],
+        ["FS-16", "OpenSearch status red", "Simulate in a sandbox service by closing an index copy", "Searches on the affected index fail", "S-2 red; alert", "Restore or rebuild the index", "Green; counts match"],
+        ["FS-17", "Flood-stage disk watermark", "Fill test data on a sandbox service", "Indexes read-only; indexing fails", "Disk alert; SRS errors", "Add storage; clear the read-only block as the provider documents", "Indexing resumes"],
+        ["FS-18", "OpenSearch credentials rotated without SRS update", "Change the SRS user password only", "SRS calls refused", "SRS log 401", "Update Key Vault; restart SRS", "Search resumes"],
+        ["FS-19", "Certificate expires", "Deploy an expired SRS server certificate in DEV", "Pega to SRS TLS fails", "TLS errors in Pega log; expiry alert should have fired earlier", "Renew; restart", "Expiry alert fires 30 days before"],
+        ["FS-20", "Key Vault secret rotated without pod restart", "Rotate the API key, delete the old key, skip the restart", "Stream fails when the old key is deleted", "SASL errors", "Rolling restart", "Runbook includes the restart"],
+        ["FS-21", "AKS node drained or zone lost", "Cordon and drain all nodes in one zone", "Pods reschedule within PDB limits", "Pod events", "Kubernetes reschedules", "Processing and search continue"],
+        ["FS-22", "Non-production load test saturates the shared cluster", "PERF load above its quota while PREPROD tests", "PERF throttled; PREPROD unaffected", "Metrics API by principal", "Lower quota; reschedule", "PREPROD response unchanged"],
+        ["FS-23", "Index rebuild during business hours on a shared service", "Full build in SIT while UAT tests search", "UAT search slower", "Latency metrics", "Schedule builds out of hours", "UAT latency within target"],
+        ["FS-24", "Stale 8.8 stream or search DSS overrides Helm", "In DEV, record cloned DSS; start with them in place", "Landing pages show Helm values (expected) or DSS values (defect)", "Stream and search landing pages", "Follow Pega Support's answer to GQ-05", "Helm values in effect"],
+        ["FS-25", "Wrong customerDeploymentId deployed", "Deploy SIT with DEV's ID in a sandbox", "SRS refuses tokens; if accepted, indexes mix", "Pipeline check should block it; SRS log", "Redeploy with the right ID; delete wrong indexes", "Pipeline check blocks the deploy"],
+        ["FS-26", "Installer upgrade fails halfway", "Stop the installer job during a DEV rehearsal", "Database left partly upgraded", "Job status; installer log", "Follow Pega's rerun guidance, or restore the clone and restart", "Second run completes"],
+        ["FS-27", "Clone starts with application Kafka data sets pointing to production", "Leave one data set unchanged in DEV, with the firewall rule in place", "Connection denied by the firewall", "Firewall log; data set errors", "Repoint or disable the data set", "No production connection; IT-10 passes"],
+        ["FS-28", "Delayed or broken items from 8.8 processed unexpectedly", "Keep a sample of items in a DEV clone", "Items run on 26.1.1 when due or requeued", "Queue processor statistics; application log", "Apply the decision per queue processor (CD-05, CD-06)", "Behaviour matches the decision"],
+        ["FS-29", "Index build interrupted", "Restart the batch tier during the build in DEV", "Build stops or continues", "Search landing page", "Resume or restart the build as Pega documents [R17]", "Complete build; counts match"],
+        ["FS-30", "All batch pods lost", "Scale the batch tier to zero in PERF under load", "Queue processing stops; items accumulate in topics", "Queue backlog alert", "Scale back", "Backlog drains; no loss"],
+    ]
+    b.table(["ID", "Scenario", "How to cause it safely", "Expected behaviour", "Detection", "Recovery", "Pass criteria"], rows,
+            caption="Failure scenario catalogue", widths=[1.1, 2.4, 2.9, 2.6, 2.6, 2.6, 2.4], size=7, label="fail")
+    b.h2("Exact checks")
+    b.table(["Check", "Command or screen", "Expected result"], [
+        ["Stream service", "Dev Studio: Configure > Decisioning > Infrastructure > Services > Stream", "Provider ExternalKafka; status NORMAL; bootstrap and prefix from Helm [R13]"],
+        ["Queue processors", "Admin Studio > Queue processors", "Ready to process falls to zero; broken items known"],
+        ["Search", "Search landing page", "SRS connected; all classes indexed; no CONFLICTS FOUND [R19]"],
+        ["Kafka DNS, TLS and metadata", "K-1, K-2, K-3", "Private IPs; trusted chain; all brokers listed"],
+        ["Topics, partitions, configuration, ACLs", "K-4 to K-7", "Topics under `pega-<code>-` only; max.message.bytes 5,000,000; ACLs as {ref:tab_acls}"],
+        ["OpenSearch health, settings, indexes", "S-2, S-3, S-4", "Green; both settings; indexes under `pega26-<code>` only"],
+        ["SRS", "S-5", "Token required; healthy response"],
+        ["Okta token", "O-1, O-2", "`scp` includes `pega.search:full`; `guid` equals `pega26-<code>`"],
+        ["Installer job", "P-5", "Completed without errors"],
+        ["Pods and secrets", "P-1, P-4", "All Ready; all ExternalSecrets SecretSynced"],
+    ], caption="Exact checks", widths=[3.6, 6.4, 6.6], size=8.5)
+    b.h2("Acceptance criteria")
+    b.table(["ID", "Criterion"], [
+        ["AC-1", "All exact checks pass in every environment, with evidence filed."],
+        ["AC-2", "All isolation tests pass in NP1 and NP2."],
+        ["AC-3", "All failure scenarios have been run at least once with results recorded; any defect is fixed or accepted by the business owner."],
+        ["AC-4", "Performance results meet the targets agreed by the business owner."],
+        ["AC-5", "Two PREPROD rehearsals completed, with the measured window within the agreed outage."],
+        ["AC-6", "Monitoring and alerts in Section 17.1 are live and tested."],
+    ], caption="Acceptance criteria", widths=[1.4, 15.2], size=9)

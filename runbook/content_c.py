@@ -1,277 +1,328 @@
-"""Sections 10 to 12: upgrade strategy, Kafka topic migration, search index migration."""
+"""Sections 7 and 8: managed OpenSearch, SRS and Okta; secrets and certificates."""
 from content_a import GEN, PUB, OWN
+import envs as E
 
 
-def s10_upgrade(b):
-    b.h1("Upgrade strategy from Pega 8.8 to 26.1.1")
-    b.h2("What changed between 8.8 and 26.1.1")
-    b.table(["Release", "Change that affects this programme", "Source"], [
-        ["8.8", "Embedded Kafka, Elasticsearch and Cassandra deprecated. VM-based deployment deprecated. Stream tier (nodeType Stream) deprecated.", "[R2, R30]"],
-        ["'24.1", "Last release that supports both embedded services and VM-based deployments.", "[R2]"],
-        ["'24.2", "External Kafka, external search and (for CDH and Process AI) external Cassandra required. Embedded Elasticsearch and the plug-in removed.", "[R2, R16]"],
-        ["Patches 23.1.4, 24.1.3, 24.2.2 and later", "Hazelcast removal tooling: HazelcastDecommission service package and the prconfig/cluster/hazelcast/disabled/default DSS.", "[R5, R9]"],
-        ["'25", "Containerized deployment only. Hazelcast removed. Tomcat 10.1 (Jakarta EE 9) only. All tables need primary keys.", "[R2, R4]"],
-        ["'26", "Kafka client 4.0.0 (backward compatible with 3.9.2). Partitioned, multi-threaded queue processing (PEGA0179). SystemPulse topic with 6 partitions. Cassandra 5.0 support.", "[R3]"],
-    ], widths=[3.2, 11.4, 2], caption="Changes between 8.8 and 26.1.1 that affect Kafka, search and the update path", size=9)
-    b.h2("Why 8.8 cannot be updated directly")
-    b.p("Pega requires Hazelcast to be removed before an update to '25 or later [R5]. The removal needs functions that exist "
-        "only in patches 23.1.4, 23.1.5, 24.1.3, 24.1.4, 24.2.2, 24.2.3 and later [R9]. Pega 8.8 has neither the "
-        "HazelcastDecommission service package nor the DSS behavior, so it cannot remove Hazelcast, and therefore cannot be "
-        "updated straight to 26.1.1. The system must pass through a bridge release.")
-    b.callout("evidence", "Pega's page \"Adopting Pega Platform infrastructure changes\" gives the sequence for clients on older releases: update to the latest patch of '24.1, externalize Elasticsearch, Kafka and (if used) Cassandra, remove Hazelcast, shift from virtual machines to containers, then update to '25 [R2]. The '26 prerequisites page repeats that Hazelcast must be removed before updating to '25 or later [R3].")
-    b.h2("Release plan")
-    b.figure(GEN + "fig_decision_source_path.png", "Assessing the 8.8 source for Release 1", OWN, width_cm=11)
-    b.table(["", "Release 1: externalize on 8.8", "Release 2: platform move", "Release 3: update to 26.1.1"], [
-        ["Pega version", "8.8 (unchanged)", "8.8 to bridge ('24.1 latest patch)", "Bridge to 26.1.1"],
-        ["Runtime", "Current 8.8 servers", "New AKS cluster", "Same AKS cluster"],
-        ["Kafka", "Current stream to Confluent (drain first)", "Same Confluent cluster, new prefix", "Same topics"],
-        ["Search", "Current search to SRS (full build)", "Same SRS, new customerDeploymentId (full build)", "Same indexes"],
-        ["Hazelcast", "Unchanged", "Removed with the DSS method", "Absent"],
-        ["Database", "Unchanged", "Copied to Azure and updated in place", "Zero-downtime update (new rules schema)"],
-        ["Outage", "Yes: drain, restart, index build", "Yes: drain, copy, update, index build", "Near zero (rolling restart)"],
-        ["Rollback", "Point 8.8 back to the old stream and search", "Keep 8.8 and its database; revert DNS", "Restore pre-update backup (Section 15.4)"],
-    ], widths=[2.4, 4.6, 4.8, 4.8], caption="What each release changes", size=8.5, first_col_bold=True)
-    b.h3("Choice of bridge release")
-    b.p("The bridge release is a transit point, used only until Release 3. This design uses the latest '24.1 patch, at least "
-        "24.1.4, for three reasons. Pega names '24.1 in its adoption sequence [R2]. Patch 24.1.4 includes the Hazelcast removal "
-        "changes without a hotfix, whereas 24.1.3 needs HFIX-C2252 [R7]. And '24.1 still accepts the embedded services the "
-        "8.8 estate may use, which keeps the rehearsal of Release 2 independent of Release 1 timing. Because Release 1 removes "
-        "the embedded services first, the latest '24.2 patch (24.2.3 or later) is also a valid bridge; OD-02 records the choice "
-        "and asks Pega Support to confirm the supported path from the selected bridge to 26.1.1.")
-    b.h3("Update method and staging")
-    b.p("Pega's guidance is to update a staging environment first and to test there before production [R25, R26]. The "
-        "zero-downtime checklist adds that copying production data into staging is not recommended; staging should hold "
-        "appropriate test data [R25]. Rehearsal timings for drain, copy, update and index build only mean something if the "
-        "volumes are close to production, so OD-13 asks the customer to decide between masked production-scale data and a "
-        "synthetic data set of the same size.")
-    b.h2("Preparation on 8.8 (all releases)")
-    b.table(["#", "Task", "How", "Output", "Needed before"], [
-        ["P-1", "Run the Pega Upgrade Tools against 8.8", "Pega Upgrade Tools for the target release [R11]", "List of impacted rules, CodeSets and JARs", "Release 2 rehearsal"],
-        ["P-2", "Prepare Jakarta EE versions of custom JARs", "Rebuild against jakarta.* packages; Pega notes that not every javax.* package maps to jakarta.* [R11]", "New JARs held in the artifact repository", "Release 3 rehearsal"],
-        ["P-3", "Set each impacted CodeSet DSS version to latest", "Supported from 8.8 [R11]", "DSS change record", "Release 3"],
-        ["P-4", "Scan for missing primary keys", "primaryKeyUtility dry run; check database free space, because the utility copies tables [R12]", "Report of tables without primary keys", "Release 2 rehearsal"],
-        ["P-5", "Create missing primary keys", "primaryKeyUtility (non-dry run) in a maintenance window", "Utility log", "Release 3"],
-        ["P-6", "Review custom queue processors", "Inventory and test plan for the '26 partitioned processing model; remove DSS delayeditems/dataflowbased/threadspernode [R3]", "Queue processor test cases", "Release 3 rehearsal"],
-        ["P-7", "Confirm database support", "Platform Support Guide for 26.1.1 [R1]", "Engine and version confirmed", "Release 2 design"],
-        ["P-8", "Inventory Kafka data sets and integrations", "Section 11.3", "Integration list with owners", "Release 1 design"],
-        ["P-9", "Measure searchable data", "Search landing page and database counts per indexed class", "Baseline for sizing and V-S checks", "Release 1 design"],
-        ["P-10", "Resolve broken queue items", "Admin Studio, queue processors, Broken items", "Backlog near zero", "Each cutover"],
-    ], widths=[1, 3.6, 5.6, 3.6, 2.8], caption="Preparation tasks", size=8.5)
-    b.h2("Release 1: externalize Kafka and search on 8.8")
-    b.p("Release 1 changes only the stream provider and the search provider. Pega's '26 Kafka and search pages have 8.8 "
-        "versions (select 8.8 in the documentation version list), and SRS supports 8.6 and later [R13, R16]. Section 11.6 and "
-        "Section 12.6 hold the detailed steps; {ref:fig_release1} shows the order.")
-    b.figure(GEN + "fig_release1_flow.png", "Release 1 sequence: drain, switch and rebuild on 8.8", OWN, width_cm=10.5, label="release1")
-    b.callout("note", "If the 8.8 nodes run on VMs outside Azure, Release 1 needs private routing from those servers to the Confluent private endpoints and to SRS (for example ExpressRoute or VPN into the hub VNet). SRS has no ingress in the target design, so Release 1 needs an internal load balancer for SRS that only the 8.8 server subnets can reach. Remove it after Release 2.")
-    b.h2("Release 2: platform move to AKS on the bridge release")
-    b.h3("Sequence")
+def s7_search(b):
+    b.h1("Managed OpenSearch and SRS design and configuration")
+    b.h2("How search works in 26.1.1")
+    b.p("SRS is a Pega backing service between Pega Platform and the search cluster. Pega sends indexing and query requests to "
+        "SRS, and SRS manages the indexes in OpenSearch [R14]. SRS isolates each Pega environment's data with a "
+        "customerDeploymentId, which becomes the index prefix [R14, R23]. The search service can serve several Pega "
+        "deployments, but Pega advises against sharing it with non-Pega software [R14].")
+    b.figure(PUB + "pega_academy_srs_cloud_deployment.png", "Client-managed cloud deployment with SRS as a backing service",
+             "Source: Pega Academy, \"Search and Reporting Service\" [R28]. © Pegasystems Inc. Reproduced with attribution. The Hazelcast pod in this illustration does not apply to '25 and later.",
+             width_cm=12)
+    b.h2("SRS and OpenSearch versions")
+    b.table(["SRS image", "Authentication", "Certified OpenSearch versions", "Pega best practice"], [
+        ["search-n-reporting-service-os", "Enabled", "AWS OpenSearch service with Elasticsearch 7.10; OpenSearch 1.3, 2.15, 2.19", "OpenSearch 2.15"],
+    ], widths=[4.2, 2.4, 6.6, 3.4], caption="SRS compatibility with OpenSearch for Pega 8.6 and later, SRS 1.44.3 or later (source [R14])", size=9)
+    b.bullets([
+        "Choose OpenSearch 2.15 or 2.19. Version 1.3 is on the matrix but is an older line, and the provider may not offer it.",
+        "Use the newest `search-n-reporting-service-os` tag that the SRS chart README lists for chart 4.13.0 [R24]. The README lists a newer SRS than the Pega page (RC-01).",
+        "Use only official OpenSearch images if the customer runs OpenSearch itself; custom images are not supported [R14].",
+        "The search cluster that the backingservices chart can provision is for development and test only, and cannot be OpenSearch [R14, R24].",
+    ])
+    b.h2("Provider selection")
+    b.p("Azure has no first-party managed OpenSearch service, so the choice is between third-party providers that run "
+        "OpenSearch in Azure regions and a self-managed cluster on AKS. Pega accepts a cloud subscription, a licensed product "
+        "or open source [R14]. This document names no provider: a provider becomes a candidate only when its own "
+        "documentation shows an Azure region and OpenSearch 2.15 or 2.19, and that check is part of the selection.")
+    b.figure(GEN + "fig_decision_search_provider.png", "Decision: managed OpenSearch provider", OWN, width_cm=11.5)
+    b.p("Score each candidate in {ref:tab_os_score}. A provider that fails a mandatory criterion is rejected whatever its score.")
+    b.table(["Criterion", "Type", "Weight", "Provider 1", "Provider 2", "Self-managed on AKS"], [
+        ["Azure region same as AKS, shown in provider documentation", "Mandatory", "", "", "", "Yes"],
+        ["OpenSearch 2.15 or 2.19 available and pinnable", "Mandatory", "", "", "", "Yes"],
+        ["Private endpoint into the customer VNet", "Mandatory", "", "", "", "Yes"],
+        ["Customer can set `action.auto_create_index` and `action.destructive_requires_name` [R14]", "Mandatory", "", "", "", "Yes"],
+        ["Fine-grained access control with index patterns [R40, R41]", "Mandatory", "", "", "", "Yes"],
+        ["Snapshots with customer-chosen retention", "Scored", "15", "", "", ""],
+        ["Support terms and response times for PROD", "Scored", "20", "", "", ""],
+        ["Metrics export to Azure Monitor", "Scored", "15", "", "", ""],
+        ["Version upgrade process and notice", "Scored", "15", "", "", ""],
+        ["Operations effort for the customer", "Scored", "20", "", "", ""],
+        ["Data residency and certifications", "Scored", "15", "", "", ""],
+    ], caption="OpenSearch provider selection worksheet", widths=[6.2, 2, 1.4, 2.3, 2.3, 2.4], size=8.5, label="os_score")
+    b.p("Only four values depend on the provider: the endpoint host, the port, the SRS user credentials and the CA certificate. "
+        "The Helm values in Appendix B keep those in angle brackets and in Key Vault, so the rest of the design does not change "
+        "when OD-03 is decided.")
+    b.figure(PUB + "opensearch_cluster.png", "OpenSearch cluster roles: cluster-manager and data nodes",
+             "Source: OpenSearch Documentation, \"Creating a cluster\" [R37]. © OpenSearch contributors. Reproduced with attribution.",
+             width_cm=8)
+    b.h2("Cluster settings and sizing")
+    b.p("SRS has its own index naming, so index auto-creation must be off. If the SRS user has the manage cluster privilege, "
+        "SRS sets this itself; otherwise apply it manually [R14]. SRS also deletes indexes by pattern, which needs "
+        "`destructive_requires_name` set to false [R14]. With an index-scoped SRS user (Section 7.5), apply both settings as "
+        "an administrator before SRS starts.")
+    b.code("""PUT _cluster/settings
+{
+  "persistent": {
+    "action": {
+      "auto_create_index": "false",
+      "destructive_requires_name": "false"
+    }
+  }
+}""", title="Cluster settings required by SRS (run once per OpenSearch service)")
+    b.callout("caution", "`destructive_requires_name: false` lets any user with delete rights remove indexes by wildcard. On a "
+              "shared service, give delete rights only through the per-environment index-scoped roles, and keep administrator "
+              "access to a break-glass group.")
+    b.p("Pega publishes default sizing for search and SRS. Start from it and adjust after measuring, as Pega advises [R14].")
+    b.table(["Service", "Landscape", "Instances", "CPU each", "RAM GB each", "Storage GB each"], [
+        ["Cluster-manager nodes", "Production, stage", "3", "2", "8", "N/A"],
+        ["Data nodes", "Production, stage", "3", "4", "16", "100"],
+        ["Data nodes", "Testing, development", "1", "2", "8", "100"],
+        ["SRS", "Production, stage", "3 (autoscaled)", "2", "2", "N/A"],
+        ["SRS", "Testing, development", "1 (autoscaled)", "2", "2", "N/A"],
+    ], widths=[4.4, 3.4, 2.4, 1.8, 2.2, 2.4], caption="Pega default sizing for search and SRS (source [R14])", size=9)
+    b.table(["Service", "Starting size", "Basis", "Adjust when"], [
+        ["os-np1 (DEV, SIT, UAT)", "3 cluster-manager, 3 data nodes at the Pega production size", "Three environments' indexes plus one full build at a time; three nodes give zone spread", "Disk above 60 % after all three builds"],
+        ["os-np2 (PERF, PREPROD)", "Same as os-prd", "Production-like behaviour for load tests and rehearsals", "Never smaller than os-prd"],
+        ["os-prd", "3 cluster-manager, 3 or more data nodes; storage from measured volume", "Pega production sizing, scaled by the searchable data measured in the upgraded clone", "Index build or query latency misses target in PERF"],
+    ], caption="Starting sizes per OpenSearch service", widths=[3.6, 4.6, 5, 3.4], size=8.5)
+    b.bullets([
+        "**Searchable data volume.** Measure it from the first upgraded clone: run the full index build in DEV and record index sizes with `_cat/indices` (command S-4). Scale PROD storage from that, plus growth and one rebuild's working space.",
+        "**Shards and replicas.** SRS creates and names the indexes itself [R14]. After the first build, read the shard and replica count of each index with `_cat/indices` and record it in Appendix A. Do not change index settings directly unless Pega Support advises it.",
+        "**Shard budget.** Add up the shards of every environment on the service and compare with the provider's per-node shard limit.",
+        "**Disk watermarks.** Record the provider's low, high and flood-stage watermark values in Appendix A, and alert before the low watermark is reached (Section 17.1). At the flood stage, indexes become read-only and indexing stops (FS-17).",
+    ])
+    b.h2("Isolation in the shared OpenSearch services")
+    b.p("Each environment has its own customerDeploymentId (Section 2.6). Set it explicitly in every values file, because the "
+        "chart defaults it to the namespace name [R23], and treat it as immutable, as Pega asks when several environments "
+        "share an SRS [R15]. A cloned environment must never reuse another environment's ID: its index build would overwrite "
+        "or mix with the other environment's indexes, and its tokens would carry the other environment's `guid`.")
+    b.figure(GEN + "fig_decision_srs.png", "Decision: one SRS per environment or one shared SRS", OWN, width_cm=11)
+    b.table(["Aspect", "SRS per environment (recommended)", "One SRS per group"], [
+        ["OpenSearch credentials", "One user per environment, index-scoped role", "One user for the whole group"],
+        ["Blast radius", "An SRS fault or bad upgrade affects one environment", "Affects every environment in the group"],
+        ["Upgrades", "Upgrade SRS per environment, in step with that environment's tests", "One upgrade for all; all environments retest"],
+        ["Token key set", "SRS points at that environment's Okta key set", "One key set; every environment's tokens come from the same server"],
+        ["Cost", "Small: 1 pod in DEV, SIT, UAT; 3 in PERF, PREPROD, PROD [R14]", "Slightly smaller"],
+    ], caption="SRS per environment compared with a shared SRS", widths=[3.4, 6.6, 6.6], size=9)
+    b.p("Give each SRS its own OpenSearch user, mapped to a role limited to its index pattern [R40, R41]. Pega says the manage "
+        "cluster privilege is optional when the cluster settings are applied manually [R14]. Pega does not say whether SRS "
+        "needs any other cluster-level permission, so test the role in DEV (IT-06) and widen it only by the permissions the "
+        "SRS log shows as missing.")
+    b.code("""pega26-<code>-srs:
+  cluster_permissions:
+    - cluster_composite_ops
+  index_permissions:
+    - index_patterns:
+        - "pega26-<code>*"
+      allowed_actions:
+        - "<index action group confirmed in DEV, for example indices_all>"
+""", title="Index-scoped role for one environment's SRS user (OpenSearch roles.yml format [R40, R41])")
+    b.p("When an environment is refreshed or retired, delete its indexes with `DELETE /pega26-<code>*` as the environment's own "
+        "SRS user, which cannot touch any other environment's indexes (Sections 17.4 and 17.5).")
+    b.h2("Pega-to-SRS tokens with Okta")
+    b.p("Pega obtains a token with the OAuth client credentials grant, authenticating with `private_key_jwt` or "
+        "`client_secret_basic`, and asks for the scope `pega.search:full` [R16, R23]. SRS checks the token signature with the "
+        "key set at `OAuthPublicKeyURL`, and checks that the `guid` claim equals the customerDeploymentId [R23]. "
+        "{ref:fig_okta} shows the flow.")
+    b.figure(GEN + "fig_okta_token_flow.png", "Token flow between Pega, Okta and SRS", OWN, width_cm=16.5, label="okta")
+    b.h3("Why a custom authorization server is required")
+    b.p("Okta's org authorization server cannot be customized: its audience, claims, policies and scopes are fixed, and its "
+        "tokens are meant for Okta's own APIs [R42]. The client credentials flow has no user, so it cannot use OpenID scopes "
+        "and needs a custom scope [R43]. Custom claims can only be added to a custom authorization server [R44]. Pega's scope "
+        "and the `guid` claim are both custom, so Okta tokens for SRS must come from a custom authorization server. Custom "
+        "authorization servers are part of Okta API Access Management [R42]. Confirm that the customer's Okta licence "
+        "includes it, and how many servers it allows, before M2 (OD-05).")
+    b.h3("Issuing a different guid per environment")
+    b.table(["Option", "How it works", "Strengths", "Weaknesses"], [
+        ["1. One authorization server per environment", "Each server has a claim `guid` with a fixed value, for example `\"pega26-sit\"`, included in access tokens", "Simplest claim; full separation of keys and policies", "Six servers; licence may limit the number"],
+        ["2. One shared server, claim based on the client", "One claim `guid` whose value is an Okta expression on the requesting app, for example a conditional on `app.clientId` [R46]", "One server for all non-production; fewer objects", "Every non-production client shares a signing key set; must prove that the expression is evaluated for client credentials tokens"],
+    ], caption="Options for the guid claim", widths=[3.2, 5.2, 4, 4.2], size=8.5)
+    b.p("Okta's expression language exposes `app.id`, `app.clientId` and `app.profile` for custom claims [R46], and supports "
+        "conditional expressions of the form `[Condition] ? [Value if TRUE] : [Value if FALSE]` [R46]. An example claim value "
+        "for option 2 is shown below. Okta's pages do not state whether app attributes are available when the token is issued "
+        "to a client with no user, so option 2 is accepted only after the DEV test.")
+    b.code("""app.clientId == "<dev-client-id>"  ? "pega26-dev"  :
+app.clientId == "<sit-client-id>"  ? "pega26-sit"  :
+app.clientId == "<uat-client-id>"  ? "pega26-uat"  :
+app.clientId == "<perf-client-id>" ? "pega26-perf" :
+app.clientId == "<ppd-client-id>"  ? "pega26-ppd"  : "none\"""", title="Claim value expression for option 2 (written as one line in Okta)")
+    b.callout("decision", ["Recommendation (OD-05): PROD uses its own custom authorization server with a fixed `guid` claim "
+              "of `pega26-prd`. The five non-production environments use one shared custom authorization server with the "
+              "client-based claim (option 2), if the DEV test proves it. If the test fails, fall back to option 1 for "
+              "non-production.",
+              "Proof in DEV: request a token for the DEV client, decode it (command O-2), and confirm `scp` contains "
+              "`pega.search:full` and `guid` equals `pega26-dev`. Repeat with the SIT client and confirm `pega26-sit`."])
+    b.h3("Okta set-up per environment")
     b.steps([
-        "Drain the 8.8 queues with the Stream Migration activity, then stop all 8.8 nodes (Section 11.6).",
-        "Take the final database backup and restore it to the Azure database.",
-        "Run the installer job with the bridge installer image, `global.actions.execute: upgrade` and `installer.upgrade.upgradeType: in-place` [R28].",
-        "Deploy the bridge tiers (`global.actions.execute: deploy`) with the new streamNamePattern prefix and the new customerDeploymentId. Use embedded Hazelcast settings (hazelcast.enabled false, clusteringServiceEnabled false) [R28].",
-        "Remove Hazelcast with the downtime method (Section 10.6.2).",
-        "Run the full index build through SRS (Section 12.6).",
-        "Run smoke tests, then switch DNS (Section 14).",
+        "In the authorization server, create the scope `pega.search:full` and an access policy with a rule that allows the client credentials grant for the environment's client.",
+        "Create the claim `guid` for access tokens (fixed value for option 1, expression for option 2) [R44].",
+        "Create one API services application per environment, named `pega-srs-<code>`, with client authentication by public key / private key (`private_key_jwt`) [R45].",
+        "Generate an RSA key pair in a controlled workstation or pipeline. Register the public key in the application's key set (JWKS) [R45]. Store the private key, in PKCS8 form encoded with base64 as the chart requires, in Key Vault as `SRS_OAUTH_PRIVATE_KEY` [R23]. Delete local copies.",
+        "Record the client ID, the token endpoint and the key set URL in Appendix A.",
     ])
-    b.h3("Hazelcast removal with the DSS method")
-    b.p("Before the window, confirm the Pega prerequisites: database CPU at least 10 % below its alert threshold, Kafka "
-        "capacity for about 100 extra partitions for the environment, and Kafka CPU at least 15 % below its alert threshold [R6]. "
-        "Pega also advises scaling down to the minimum number of nodes [R8].")
-    b.table(["Step", "Action [R8]", "Expected result"], [
-        ["H-1", "Dev Studio > Records > SysAdmin > Dynamic System Settings. Find prconfig/cluster/hazelcast/disabled/default. If it is missing, create it with owning ruleset Pega-Engine, type String, and select \"Is restart required\".", "DSS exists"],
-        ["H-2", "Set its value to true and save.", "Value true"],
-        ["H-3", "Stop all Pega nodes (scale every tier to 0 replicas).", "No Pega pods running"],
-        ["H-4", "Start all Pega nodes (restore replica counts).", "All pods Ready"],
-        ["H-5", "Skip Clustering Service removal: the bridge runs embedded Hazelcast. (If the Clustering Service was used, set hazelcast.enabled and clusteringServiceEnabled to false and run helm upgrade.)", "No Clustering Service pods"],
-        ["H-6", "Records > Integration-Resources > Service Package > HazelcastDecommission. Run hazelcast/disabled with GET.", "Response true"],
-        ["H-7", "Run checkRemoteExecutionConnectivity with GET.", "Response allNodesReachable [R7]"],
-    ], widths=[1.2, 11, 4.4], caption="Hazelcast removal steps on the bridge release", size=8.5)
-    b.h2("Release 3: zero-downtime update to 26.1.1")
-    b.p("Release 3 runs on the platform built in Release 2. The Pega Helm chart's zero-downtime upgrade type migrates the "
-        "rules into a new rules schema, uses a temporary data schema, upgrades the rules, performs a rolling reboot onto the new "
-        "rules, then upgrades the data schema [R28, R33]. It is supported for updates from 8.4.2 and later [R28]. Pega's update "
-        "procedure for client-managed deployments has four parts: prepare the environment, update the database schemas, "
-        "update the nodes with the Helm chart, and complete the post-update tasks [R27].")
-    b.figure(GEN + "fig_stage2_flow.png", "Release 3 sequence on the AKS platform", OWN, width_cm=9.5)
-    b.figure(GEN + "fig_zdt_schemas.png", "Schema states during a zero-downtime update",
-             "Source: Pega Helm charts, \"Upgrading Pega Platform in your deployment with zero-downtime\" [R33]. © Pegasystems Inc., Apache License 2.0. Images combined and numbered for this document.",
-             width_cm=16)
+    b.table(["Setting", "Value", "Source"], [
+        ["Issuer", "`https://<okta-domain>/oauth2/<auth-server-id>`", "[R42]"],
+        ["Token endpoint (`pegasearch.srsAuth.url`)", "`https://<okta-domain>/oauth2/<auth-server-id>/v1/token`", "[R43]"],
+        ["Key set URL (`srsRuntime.env.OAuthPublicKeyURL`)", "The `jwks_uri` value from `https://<okta-domain>/oauth2/<auth-server-id>/.well-known/openid-configuration`", "[R42]"],
+        ["Client ID (`pegasearch.srsAuth.clientId`)", "Client ID of `pega-srs-<code>`", "[R23]"],
+        ["Authentication (`pegasearch.srsAuth.authType`)", "`private_key_jwt`", "[R23, R45]"],
+        ["Key algorithm (`pegasearch.srsAuth.privateKeyAlgorithm`)", "`RS256` (chart default)", "[R23]"],
+        ["Scope (`pegasearch.srsAuth.scopes`)", "`pega.search:full`", "[R23]"],
+    ], caption="Okta values used in the Helm charts", widths=[5.4, 9.2, 2], size=9)
+    b.h3("Network path, token lifetime and rotation")
+    b.bullets([
+        "Pega pods call the Okta token endpoint, and SRS pods fetch the Okta key set. Both go to `<okta-domain>` on port 443 through the hub firewall. Add an FQDN allow rule for `<okta-domain>` from the Pega and SRS subnets only.",
+        "Token lifetime is set in the access policy rule of the authorization server [R42]. Use the same lifetime in all environments and record it in Appendix A. Pega requests a new token when needed; measure how often in DEV by counting token requests in the Okta system log.",
+        "Pega does not state whether SRS checks the issuer or audience. Test it in DEV with a token from another authorization server (FS-12) and record the result.",
+        "Rotate the client key by adding a second public key to the application, updating `SRS_OAUTH_PRIVATE_KEY` in Key Vault, restarting the Pega tiers, checking search, and then removing the old public key. Okta signing key rotation is handled by Okta; SRS reads the current key set from the key set URL.",
+    ])
+    b.h2("SRS deployment (backingservices chart)")
+    b.p("Each environment has its own SRS release in namespace `srs-<code>`. The keys come from the SRS chart README [R24].")
     b.code("""global:
-  actions:
-    execute: "upgrade-deploy"
-installer:
-  image: "<acr-name>.azurecr.io/platform/installer:26.1.1"
-  upgrade:
-    upgradeType: "zero-downtime"
-    targetRulesSchema: "<new-rules-schema>"
-    targetDataSchema: "<temp-data-schema>"
-""", title="values-<env>.yaml: installer section for Release 3 [R28]")
-    b.table(["Step", "Action", "Source"], [
-        ["U-1", "Confirm Hazelcast removal (H-6 and H-7 results from Release 2).", "[R7, R8]"],
-        ["U-2", "Update SRS to the image version listed for the Helm chart that deploys 26.1.1; confirm the search cluster version is on the matrix.", "[R16, R29]"],
-        ["U-3", "Confirm Confluent compatibility with the Kafka 4.0.0 client in staging (V-K-05).", "[R3]"],
-        ["U-4", "If topic creation is restricted, set SystemPulse_SystemPulseTopicName to 6 partitions.", "[R3]"],
-        ["U-5", "Remove DSS delayeditems/dataflowbased/threadspernode; retest custom queue processors.", "[R3]"],
-        ["U-6", "Confirm primary keys exist on all tables (P-5).", "[R12]"],
-        ["U-7", "Update the Helm values: 26.1.1 images, installer section above. Run helm upgrade.", "[R28, R33]"],
-        ["U-8", "After the update, import the Jakarta EE JARs into a higher CodeSet version and restart.", "[R11]"],
-        ["U-9", "Configure prpcUtils for Kafka if pipelines use it.", "[R10]"],
-        ["U-10", "Run the post-update checks: Stream landing page, index status, queue processors, regression pack.", "[R15, R21]"],
-        ["U-11", "Drop the temporary data schema after the update, as the Helm README instructs.", "[R28]"],
-    ], widths=[1.2, 13.2, 2.2], caption="Release 3 steps", size=8.5)
-
-
-def s11_kafka_migration(b):
-    b.h1("Kafka topic migration: requirements, validation, strategy and execution")
-    b.h2("Requirements")
-    b.table(["ID", "Requirement", "Source"], [
-        ["R-K-01", "No message that is in transit in a Pega stream queue at the time of a provider switch may be lost.", "[R15]"],
-        ["R-K-02", "Every queue processor and data flow that holds messages must be RUNNING when the drain starts, because the Stream Migration activity does not drain STOPPED, FAILED or NOT RUNNING ones.", "[R15]"],
-        ["R-K-03", "The target Kafka must meet Pega's settings, ACLs and authentication rules before the first start.", "[R13]"],
-        ["R-K-04", "Pega must report Provider ExternalKafka and Status NORMAL on the Stream landing page after each start.", "[R15]"],
-        ["R-K-05", "Topic names must carry an environment-specific prefix so environments sharing a cluster cannot read each other's data.", "[R13, R28]"],
-        ["R-K-06", "Application Kafka integrations (Kafka data sets) must keep working, or be repointed with an agreed offset position.", "[R13]"],
-        ["R-K-07", "The source topics must remain intact until the rollback window for each release closes.", "AD-05"],
-    ], widths=[1.6, 12.8, 2.2], caption="Kafka migration requirements", size=9)
-    b.h2("What can and cannot be migrated")
-    b.p("Pega states that existing Stream data cannot be moved to a new Kafka storage, whether the source is embedded stream "
-        "or another external Kafka, because of how each solution stores data [R15]. The Helm chart guidance says the same for "
-        "the stream tier: existing stream data is not migrated [R30]. What Pega offers instead is a controlled drain: the Stream "
-        "Migration activity empties the queues so that no in-transit message is lost when the provider changes [R15].")
-    b.table(["Kafka content", "Can it be copied?", "Treatment"], [
-        ["Queue processor messages (standard and dedicated)", "No", "Drain on the source; target starts with empty topics"],
-        ["Delayed queue processor items", "No", "Drain; items scheduled far in the future must be checked on the source before the drain (V-K-03)"],
-        ["Data flow stream partitions fed by the stream service", "No", "Drain; compare last processed IDs with topic end offsets [R30]"],
-        ["Stream data sets (application)", "No", "Producers stopped; consumers finish; target topics start empty"],
-        ["Consumer group offsets for Pega topics", "Not needed", "New topics, new offsets"],
-        ["Kafka data sets on a separate Kafka service", "Not part of the stream service", "Decision in {ref:fig_stream_data}"],
-    ], widths=[5.2, 3.2, 8.2], caption="Treatment of each kind of Kafka content", size=9)
-    b.h2("Inventory")
-    b.p("Build the inventory in staging and confirm it in production before each release. Record it in Appendix A.")
-    b.table(["Inventory item", "Where to find it", "Recorded fields"], [
-        ["Queue processors", "Admin Studio > Queue processors", "Name, type, status, Ready to process, Broken, node type"],
-        ["Job schedulers", "Admin Studio > Job schedulers", "Name, node type, schedule"],
-        ["Data flows reading streams", "Data Flow landing page", "Name, run ID, status, partitions"],
-        ["Kafka data sets and Kafka configuration instances", "Records > Data Model > Data Set (type Kafka); Records > SysAdmin > Kafka", "Name, brokers, topic, owner, consumer group"],
-        ["Topics on the target", "Confluent CLI or console (command K-4)", "Name, partitions, replication, max.message.bytes"],
-    ], widths=[4.4, 6, 6.2], caption="Kafka inventory", size=9)
-    b.h2("Strategy")
-    b.figure(GEN + "fig_decision_stream_data.png", "Decision: treatment of each topic or stream", OWN, width_cm=13.5, label="stream_data")
-    b.table(["Release", "Kafka strategy", "Why"], [
-        ["Release 1", "Drain the 8.8 stream with the Stream Migration activity, stop all nodes, configure Confluent, start. Topics are created under `pega-<env>-` on Confluent.", "Pega documented procedure [R15]; no Pega software change at the same time [R30]."],
-        ["Release 2", "Drain again with the activity, stop 8.8, update the copied database, start the bridge release with prefix `pega-<env>2-` on the same Confluent cluster.", "The new prefix gives the bridge empty topics and leaves the 8.8 topics untouched for rollback (AD-05)."],
-        ["Release 3", "No drain. The zero-downtime update keeps the same prefix and topics.", "Same Kafka cluster; Pega performs a rolling reboot [R28]."],
-    ], widths=[2.2, 8.8, 5.6], caption="Kafka strategy per release", size=9)
-    b.h3("Application Kafka data sets")
-    b.p("Kafka data sets belong to the application, not to the platform. Pega requires them to use a Kafka service separate "
-        "from the stream service [R13]. For each one, the application owner chooses one of these options:")
-    b.bullets([
-        "**Keep the current Kafka service.** Only the network path from AKS changes. Confirm reachability and credentials in Release 2.",
-        "**Move to a separate Confluent cluster, new records only.** The consuming data flow starts from new records after cutover; record the last offsets on the source as evidence.",
-        "**Move to a separate Confluent cluster with history.** Use Confluent Cluster Linking: mirror topics copy messages byte for byte and keep partition and offset positions, and consumer offsets can be synchronized [R41]. Promote the mirror topics at cutover.",
-        "**Replay from the system of record.** Use when the source cannot be linked and history is needed.",
+  k8sProvider: "aks"
+  imageCredentials:
+    registry: "<acr-name>.azurecr.io"
+srs:
+  enabled: true
+  deploymentName: "srs-<code>"
+  srsRuntime:
+    replicaCount: <1 in DEV, SIT, UAT; 3 in PERF, PREPROD, PROD>
+    srsImage: "<acr-name>.azurecr.io/platform-services/search-n-reporting-service-os:<tag>"
+    env:
+      AuthEnabled: true
+      OAuthPublicKeyURL: "<okta-jwks-url>"
+    ssl:
+      enabled: true
+      clientAuthentication: "want"
+      keystore:
+        file: "srs-keystore.p12"
+        type: "PKCS12"
+      truststore:
+        file: "srs-truststore.jks"
+        type: "JKS"
+      certsSecret: "srs-runtime-certs"
+  srsStorage:
+    provisionInternalESCluster: false
+    domain: "<search-host>"
+    port: <search-port>
+    protocol: https
+    tls:
+      enabled: true
+    basicAuthentication:
+      enabled: true
+    authSecret: "srs-search-credentials"
+    requireInternetAccess: false
+    networkPolicy:
+      enabled: true""", title="backingservices values for one environment (complete files in Appendix B)")
+    b.h2("Index build planning")
+    b.p("After Pega connects to SRS, SRS indexes all searchable data, and Pega states that this needs a downtime period. The "
+        "length depends on the data model, the resources given to Pega and SRS, the number of queue processors and the amount "
+        "of searchable data [R15]. For a cloned environment, the build runs during the first start with intake held "
+        "(Section 10.4), so its length sets part of the production outage.")
+    b.steps([
+        "In every rehearsal, record the start and end of the build, the number of batch pods, SRS replicas and OpenSearch data nodes, and the row counts of the main indexed classes.",
+        "Plot build time against searchable data volume across DEV, PERF and PREPROD. PREPROD, built from a recent full-size clone on production-like services, is the best predictor.",
+        "Estimate production time as the PREPROD time scaled by the ratio of production to PREPROD data volume, plus 25 % contingency. Use the larger of this and the measured PREPROD time if the volumes are close.",
+        "If the estimate does not fit the outage window, add batch pods and OpenSearch data nodes for the cutover and measure again.",
     ])
-    b.h2("Validation matrix")
-    b.table(["ID", "When", "Check", "Method", "Pass criterion", "Evidence"], [
-        ["V-K-01", "Before", "Target reachable from Pega pods", "Commands K-1 to K-3 (Appendix D)", "Private IPs; TLS chain valid; all brokers listed", "Command output"],
-        ["V-K-02", "Before", "ACLs present", "confluent kafka acl list", "Four ACL entries per {ref:tab_acls}", "ACL export"],
-        ["V-K-03", "Before", "Queues healthy", "Admin Studio queue processors", "All in scope RUNNING; Broken items resolved or accepted in writing", "Screenshot and list"],
-        ["V-K-04", "During", "Drain complete", "GET .../pzstream/migration", "queueSize 0, timeToDrainMS 0, migrationStatus COMPLETED [R15]", "JSON response with time"],
-        ["V-K-05", "After start", "Client compatibility", "Pega log on start; produce and consume test queue item", "No client-broker version errors; test item processed", "Log extract"],
-        ["V-K-06", "After start", "Stream service healthy", "Configure > Decisioning > Infrastructure > Services > Stream", "Provider ExternalKafka; Status NORMAL [R15]", "Screenshot"],
-        ["V-K-07", "After start", "Topic and ACL coverage", "Command K-4; compare with ACL prefix", "Every Pega-created topic under an allowed prefix or literal ACL", "Topic list"],
-        ["V-K-08", "After start", "Message size limit", "Command K-6 on each topic", "max.message.bytes 5,000,000 or higher", "Config output"],
-        ["V-K-09", "After start", "Queue processors running", "Admin Studio", "All expected queue processors RUNNING; Ready to process falling", "Screenshot"],
-        ["V-K-10", "After start", "Partition budget", "Command K-5", "Total within limit with 30 % headroom", "Count"],
-        ["V-K-11", "After start", "Application Kafka data sets", "Run each data set test or data flow", "Expected messages received at expected offsets", "Data flow run report"],
-        ["V-K-12", "After rollback window", "Old topics removed", "Command K-4 for the old prefix", "No topics under the retired prefix", "Topic list"],
-    ], widths=[1.5, 1.7, 2.8, 3.8, 4.4, 2.4], caption="Kafka validation matrix", size=8)
-    b.h2("Execution")
-    b.table(["Step", "Action", "Command or location", "Expected result"], [
-        ["K-E1", "Confirm V-K-01 to V-K-03 pass.", "Appendix D", "All pass"],
-        ["K-E2", "Stop producers: route users to a maintenance page, stop listeners and file or email services, pause producer data flows. Do not stop consumers.", "Ingress maintenance rule; Admin Studio", "No new items being queued"],
-        ["K-E3", "Start the Stream Migration activity from inside a Pega pod.", "`curl --request POST http://localhost:8080/prweb/PRRestService/CloudRemoteAPI/v1/pzstream/migration` [R15]", "HTTP success"],
-        ["K-E4", "Poll the status every minute.", "`curl --request GET http://localhost:8080/prweb/PRRestService/CloudRemoteAPI/v1/pzstream/migration` [R15]", "queueSize falls to 0; migrationStatus COMPLETED"],
-        ["K-E5", "Stop all Pega nodes.", "Scale tiers to 0 (AKS) or stop servers (VMs)", "No nodes running"],
-        ["K-E6", "Configure the target Kafka settings (Section 7.7).", "Helm values or 8.8 stream settings", "Configuration reviewed"],
-        ["K-E7", "Start all nodes.", "helm upgrade or server start", "Pods Ready"],
-        ["K-E8", "Run V-K-05 to V-K-11.", "Section 11.5", "All pass"],
-        ["K-E9", "Only when switching between two external providers: restart the Kafka queues.", "`curl --request DELETE http://localhost:8080/prweb/PRRestService/CloudRemoteAPI/v1/pzstream/migration` [R15]", "HTTP success; queues restarted"],
-        ["K-E10", "Re-enable producers.", "Remove maintenance rule; restart listeners", "New items processed"],
-    ], widths=[1.4, 5.6, 6.2, 3.4], caption="Kafka execution steps", size=8)
-    b.figure(PUB + "pega_docs_stream-migration-external-kafka-status.png", "Stream landing page after the switch: Provider ExternalKafka, Status NORMAL",
-             "Source: Pega Documentation, \"Switching Kafka providers while preserving Stream data\" [R15]. © Pegasystems Inc. Reproduced with attribution.",
-             width_cm=14)
-    b.callout("caution", ["The REST call uses localhost, so run it from inside a Pega node (for example kubectl exec into a batch pod). Run it once, from one node.",
-              "If the 8.8 source runs the deprecated stream tier on Kubernetes, the Helm chart describes an equivalent manual drain: set producing tiers to 0 replicas, wait until Ready to Process is 0 for every queue processor, and compare data flow partition last IDs with topic offsets from GetOffsetShell [R30]. Use it as a cross-check of the activity result."])
-    b.h3("Release 3 Kafka points")
-    b.bullets([
-        "Pega '26 replaces single-threaded queue processing with a partitioned model with isolated thread pools per processor [R3]. Expect different consumer group activity on Confluent after the update; compare throughput, not thread counts.",
-        "If dynamic topic creation is allowed, Pega raises SystemPulse_SystemPulseTopicName to 6 partitions itself; otherwise do it before the update [R3].",
-        "Confirm the Confluent cluster accepts the Kafka 4.0.0 client used by '26. Pega warns that a broker older than the client library can cause failures or slow client-broker communication [R3].",
-    ])
+    b.p("The build is complete when the search landing page shows every class indexed with no errors [R19], the document count "
+        "of each main index matches the row count of its class in the database within the tolerance agreed with the "
+        "application team, and no class shows CONFLICTS FOUND [R19]. Pega documents the rebuild steps and screens [R17].")
+    b.h2("Backups and restore")
+    b.p("Every index can be rebuilt from the Pega database, so OpenSearch snapshots are optional. They shorten recovery but "
+        "add storage cost.")
+    b.table(["Choice", "Recovery after loss of the OpenSearch service", "Recovery time"], [
+        ["No snapshots", "Recreate the service, apply the cluster settings, restart SRS, run a full index build", "Measured full build time plus provisioning time"],
+        ["Provider snapshots", "Restore the latest snapshot, then reindex classes changed since the snapshot", "Restore time plus a partial build; measure in PERF"],
+    ], caption="Recovery choices for search", widths=[3.2, 8.6, 4.8], size=9)
+    b.p("Elasticsearch 8.x snapshots cannot be restored into OpenSearch [R38, R39], and the 8.8 embedded indexes are not in a "
+        "snapshot-ready form, so snapshots play no part in moving from 8.8.")
 
 
-def s12_search_migration(b):
-    b.h1("Search index migration: requirements, validation, strategy and execution")
-    b.h2("Requirements")
-    b.table(["ID", "Requirement", "Source"], [
-        ["R-S-01", "After each release, every indexed class (Work, Data, Rules and custom indexes) must be searchable with results that match the database.", "[R21]"],
-        ["R-S-02", "The search cluster must be on the SRS compatibility matrix and configured with the two required cluster settings.", "[R16]"],
-        ["R-S-03", "Each Pega environment must use its own immutable customerDeploymentId.", "[R17, R28]"],
-        ["R-S-04", "Pega-to-SRS traffic must be authorized (OAuth) and encrypted (TLS or service mesh).", "[R16]"],
-        ["R-S-05", "The 8.8 indexes must remain usable until the Release 2 rollback window closes.", "AD-06"],
-        ["R-S-06", "The index build duration must fit inside the outage window, measured in rehearsal.", "[R17]"],
-    ], widths=[1.6, 12.8, 2.2], caption="Search migration requirements", size=9)
-    b.h2("What can and cannot be migrated")
-    b.p("SRS builds its own indexes from the Pega database. After Pega connects to SRS, \"SRS indexes all searchable data, "
-        "which requires a downtime period\" whose length depends on the data model, cluster resources, the number of queue "
-        "processors and the amount of searchable data [R17]. Indexes from embedded search or the legacy plug-in are therefore "
-        "not reused. Copying SRS indexes between search clusters with snapshots is also not used in this design, for two "
-        "reasons: SRS owns index names and mappings, and Elasticsearch 8.x snapshots cannot be restored into OpenSearch, "
-        "which can only restore snapshots from the versions before its fork, and supports moving later data only through "
-        "reindexing tools [R43, R44].")
-    b.figure(GEN + "fig_decision_search_index.png", "Decision: search index strategy", OWN, width_cm=15)
-    b.h2("Inventory and baseline")
-    b.table(["Item", "Where", "Recorded fields"], [
-        ["Indexed classes and status", "Configure > System > Settings > Search, Indexing section, per tab [R21]", "Class, index type, status, document count"],
-        ["Custom search indexes", "Search landing page; custom search properties rules", "Class, properties, owner"],
-        ["Database row counts for indexed classes", "SQL count on each class table (DBA)", "Count with timestamp"],
-        ["Index sizes on the search cluster", "Command S-4", "Index name, documents, size"],
-        ["Key business searches", "Application team", "Search text, expected result count"],
-    ], widths=[4.4, 6.6, 5.6], caption="Search inventory", size=9)
-    b.h2("Strategy")
-    b.table(["Release", "Search strategy", "Why"], [
-        ["Release 1", "Deploy SRS and the search cluster; connect 8.8 to SRS; run the full index build.", "Pega documented path for moving to SRS [R17]."],
-        ["Release 2", "Set a new customerDeploymentId; the bridge release builds a full new set of indexes on the same search cluster.", "Keeps the 8.8 indexes for rollback; SRS separates data by deployment ID [R16]."],
-        ["Release 3", "Keep the customerDeploymentId; check index status after the update; re-index only classes that report a problem.", "Same SRS and indexes; zero-downtime update."],
-    ], widths=[2.2, 8.4, 6], caption="Search strategy per release", size=9)
-    b.h2("Validation matrix")
-    b.table(["ID", "When", "Check", "Method", "Pass criterion", "Evidence"], [
-        ["V-S-01", "Before", "Cluster version and health", "Commands S-1, S-2", "Version on the matrix; status green", "Output"],
-        ["V-S-02", "Before", "Required settings", "Command S-3", "auto_create_index false; destructive_requires_name false", "Output"],
-        ["V-S-03", "Before", "SRS healthy", "kubectl get pods -n srs-<env>; SRS logs", "All replicas Ready; no storage connection errors", "Output"],
-        ["V-S-04", "Before", "Pega reaches SRS", "Command S-5 from a Pega pod", "TLS handshake succeeds", "Output"],
-        ["V-S-05", "Before", "customerDeploymentId", "Helm values review", "Set explicitly; new value for Release 2", "Values diff"],
-        ["V-S-06", "Before", "OAuth token content", "Decode a token from the IdP", "Scope pega.search:full granted; guid equals customerDeploymentId", "Decoded claims (no signature)"],
-        ["V-S-07", "During", "Build progress", "Queue Processor landing page; system log [R19]", "Progress advancing; no growing broken items", "Screenshots"],
-        ["V-S-08", "After", "Index status", "Search landing page [R21]", "No class in an error or CONFLICTS FOUND status", "Screenshot"],
-        ["V-S-09", "After", "Document counts", "Search landing page counts against database counts", "Equal for Work and Data classes, or differences explained", "Comparison sheet"],
-        ["V-S-10", "After", "Business searches", "Run the key searches", "Expected results returned", "Test record"],
-        ["V-S-11", "After", "Incremental indexing", "Create and update a case; search for it", "Found within the agreed delay", "Test record"],
-        ["V-S-12", "After rollback window", "Old indexes removed", "Command S-4 with the old prefix", "No indexes under the retired customerDeploymentId", "Output"],
-    ], widths=[1.5, 1.6, 2.8, 4, 4.4, 2.3], caption="Search validation matrix", size=8)
-    b.h2("Execution")
-    b.table(["Step", "Action", "Where", "Expected result"], [
-        ["S-E1", "Confirm V-S-01 to V-S-06 pass.", "Appendix D", "All pass"],
-        ["S-E2", "Deploy or confirm SRS for the environment.", "helm upgrade --install with backingservices values", "SRS pods Ready"],
-        ["S-E3", "Set pegasearch and global.customerDeploymentId in the Pega values (Section 8.7).", "Pega Helm values", "Values reviewed"],
-        ["S-E4", "Start Pega. SRS begins indexing searchable data.", "helm upgrade", "Indexing queue items appear"],
-        ["S-E5", "If an index needs a manual rebuild, open the Search landing page, select the index, click Re-index and choose the classes. The pxAccessSearchLP privilege is needed (PegaRULES:SysAdm4 includes it).", "Configure > System > Settings > Search [R20]", "Rebuild starts"],
-        ["S-E6", "Monitor progress on the Queue Processor landing page and in the system log.", "[R19]", "Progress to completion"],
-        ["S-E7", "If the build is slow and the database has headroom, tune DSS indexing/distributed/queue/maxrecords (records processed per invocation of the incremental indexer).", "Dynamic System Settings [R19]", "Higher throughput without database alerts"],
-        ["S-E8", "Run V-S-07 to V-S-11.", "Section 12.5", "All pass"],
-    ], widths=[1.4, 7.8, 4.2, 3.2], caption="Search execution steps", size=8)
-    b.callout("note", ["Pega notes that reindexing individual classes leaves the state incomplete; a complete reindex is needed for the state to be available, and the system does not reindex child classes of a class you name [R20].",
-              "Rebuilds of Work classes have the largest performance effect [R21]. Schedule manual rebuilds of large Work classes outside business hours after go-live."])
+def s8_secrets(b):
+    b.h1("Secrets, certificates and identity")
+    b.p("No password, key or JAAS string is written in a Helm values file. The Pega Helm charts support external secrets for "
+        "the database, stream, SRS OAuth and certificates [R23]. Key Vault is the system of record, one vault per environment, "
+        "and the External Secrets Operator copies secrets into Kubernetes [R48].")
+    b.figure(GEN + "fig_secrets_flow.png", "Secret delivery from Key Vault to Pega, installer and SRS pods", OWN, width_cm=16)
+    b.h2("Secret inventory")
+    b.p("{ref:tab_secrets} lists every secret. Key names marked as fixed are required by the Pega charts; the secret names "
+        "are this design's convention.")
+    b.table(["Kubernetes secret", "Keys", "Used by", "Key Vault secrets", "Key names"], [
+        ["pega-db-secret", "DB_USERNAME, DB_PASSWORD", "Pega tiers and installer job (`global.jdbc.external_secret_name`)", "`pega-db-username`, `pega-db-password`", "Fixed [R23]"],
+        ["pega-stream-secret", "STREAM_TRUSTSTORE_PASSWORD, STREAM_KEYSTORE_PASSWORD, STREAM_JAAS_CONFIG", "Pega tiers (`stream.external_secret_name`)", "`stream-truststore-password`, `stream-keystore-password`, `confluent-jaas`", "Fixed [R23]"],
+        ["pega-srs-oauth", "SRS_OAUTH_PRIVATE_KEY", "Pega tiers (`pegasearch.srsAuth.external_secret_name`)", "`okta-srs-private-key`", "Fixed [R23]"],
+        ["srs-search-credentials", "username, password", "SRS (`srs.srsStorage.authSecret`)", "`opensearch-srs-username`, `opensearch-srs-password`", "Per SRS README [R24]"],
+        ["srs-runtime-certs", "keystore and truststore files, keystorePassword, truststorePassword", "SRS (`srs.srsRuntime.ssl.certsSecret`)", "`srs-tls-keystore`, `srs-tls-truststore`, passwords", "Per SRS README [R24]"],
+        ["pega-tier-tls", "TOMCAT_KEYSTORE_CONTENT, TOMCAT_KEYSTORE_PASSWORD, ca.crt", "Web tier TLS (`tier.service.tls.external_secret_names`)", "`pega-tls-keystore`, `pega-tls-password`, `pega-tls-ca`", "Fixed [R23]"],
+    ], widths=[2.8, 3.8, 3.8, 4, 2.2], caption="Secret inventory (one set per environment, in kv-pega-<code>)", size=8, label="secrets")
+    b.h2("External Secrets Operator manifests")
+    b.code("""apiVersion: external-secrets.io/v1beta1
+kind: SecretStore
+metadata:
+  name: keyvault
+  namespace: pega-<code>
+spec:
+  provider:
+    azurekv:
+      authType: WorkloadIdentity
+      vaultUrl: "https://kv-pega-<code>.vault.azure.net"
+      serviceAccountRef:
+        name: eso-keyvault-reader
+---
+apiVersion: external-secrets.io/v1beta1
+kind: ExternalSecret
+metadata:
+  name: pega-stream-secret
+  namespace: pega-<code>
+spec:
+  refreshInterval: 1h
+  secretStoreRef:
+    name: keyvault
+    kind: SecretStore
+  target:
+    name: pega-stream-secret
+  data:
+    - secretKey: STREAM_TRUSTSTORE_PASSWORD
+      remoteRef: { key: stream-truststore-password }
+    - secretKey: STREAM_KEYSTORE_PASSWORD
+      remoteRef: { key: stream-keystore-password }
+    - secretKey: STREAM_JAAS_CONFIG
+      remoteRef: { key: confluent-jaas }
+---
+apiVersion: external-secrets.io/v1beta1
+kind: ExternalSecret
+metadata:
+  name: pega-srs-oauth
+  namespace: pega-<code>
+spec:
+  refreshInterval: 1h
+  secretStoreRef:
+    name: keyvault
+    kind: SecretStore
+  target:
+    name: pega-srs-oauth
+  data:
+    - secretKey: SRS_OAUTH_PRIVATE_KEY
+      remoteRef: { key: okta-srs-private-key }""", title="SecretStore and ExternalSecrets for the Pega namespace (Azure Key Vault provider [R48])")
+    b.p("Create the same pattern for `pega-db-secret` and `pega-tier-tls` in `pega-<code>`, and for `srs-search-credentials` "
+        "and `srs-runtime-certs` in `srs-<code>`. Each namespace has its own SecretStore and workload identity, and that "
+        "identity can read only its own environment's vault.")
+    b.callout("note", "Check which External Secrets Operator API version is installed (`v1beta1` or `v1`) and use it. The "
+              "stream truststore and keystore password keys can hold empty values with SASL/PLAIN and a public CA, but keep the "
+              "keys in the order the chart expects [R23].")
+    b.h2("Rotation")
+    b.table(["Secret", "Steps", "Restart needed"], [
+        ["Confluent API key", "Create a second key for the same service account; write the new JAAS value to Key Vault; wait for or force the External Secrets refresh; rolling restart of the Pega tiers; check the Stream landing page; delete the old key", "Yes, Pega tiers"],
+        ["OpenSearch SRS user password", "Change the password on the provider; update Key Vault; refresh; restart SRS; check search (S-5)", "Yes, SRS"],
+        ["Okta client key", "Add the new public key to the Okta app; update `okta-srs-private-key`; refresh; restart Pega tiers; check search; remove the old public key", "Yes, Pega tiers"],
+        ["Database password", "Per the DBA process; update Key Vault; refresh; restart Pega tiers", "Yes"],
+    ], caption="Secret rotation", widths=[3.4, 10.4, 2.8], size=8.5)
+    b.callout("caution", "Pods read these values at start. A new Key Vault version reaches the Kubernetes secret on the next "
+              "refresh, but running pods keep the old value until they restart. A rotation without a restart works until the "
+              "old credential is deleted, then fails (FS-20).")
+    b.h2("Certificates")
+    b.table(["Certificate", "Issued by", "Used for", "Renewal owner"], [
+        ["Public TLS certificate for the Pega host name", "Customer public CA", "Application Gateway listener", "Platform team"],
+        ["Web tier backend certificate", "Customer private CA", "Application Gateway to web pods", "Platform team"],
+        ["SRS server certificate", "Customer private CA", "Pega to SRS TLS", "Platform team"],
+        ["Confluent broker certificates", "Confluent (public CA)", "SASL_SSL from Pega", "Confluent"],
+        ["OpenSearch endpoint certificate", "Provider or customer CA", "SRS to OpenSearch TLS", "OpenSearch provider"],
+        ["Okta endpoint certificate", "Okta (public CA)", "Token and key set calls", "Okta"],
+    ], caption="Certificates", widths=[5, 3.6, 4.4, 3.6], size=9)
+    b.callout("caution", "Do not route Pega-to-Confluent, SRS-to-OpenSearch or Okta traffic through a TLS-inspecting proxy. "
+              "Re-signed certificates break the trust chain that the clients check.")
