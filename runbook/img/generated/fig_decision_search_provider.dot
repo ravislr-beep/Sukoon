@@ -1,0 +1,24 @@
+digraph G {
+
+  graph [fontname="Liberation Sans", fontsize=11, bgcolor="white", pad="0.3", nodesep="0.35", ranksep="0.45", fontcolor="#1F3864"];
+  node  [fontname="Liberation Sans", fontsize=10, shape=box, style="rounded,filled", fillcolor="white", color="#44546A", penwidth=1.1, margin="0.14,0.07"];
+  edge  [fontname="Liberation Sans", fontsize=9, color="#44546A", fontcolor="#595959", arrowsize=0.7, penwidth=1.0];
+
+
+  rankdir=TB;
+  start [label="Select the managed OpenSearch provider", fillcolor="#DCE6F2"];
+  q1 [shape=diamond, style="filled", fillcolor="#FFF2CC", label="Provider documentation shows\nan Azure region and OpenSearch\n2.15 or 2.19 (SRS matrix)?", margin="0.04,0.04", fontsize=9.5];
+  q2 [shape=diamond, style="filled", fillcolor="#FFF2CC", label="Private connectivity from\nthe customer VNet\n(private endpoint)?", margin="0.04,0.04", fontsize=9.5];
+  q3 [shape=diamond, style="filled", fillcolor="#FFF2CC", label="Can the customer set\nauto_create_index and\ndestructive_requires_name?", margin="0.04,0.04", fontsize=9.5];
+  q4 [shape=diamond, style="filled", fillcolor="#FFF2CC", label="Fine-grained roles with\nindex patterns, snapshots,\nsupport terms accepted?", margin="0.04,0.04", fontsize=9.5];
+  ok [label="Candidate: score as in Section 7.3\nimage search-n-reporting-service-os", fillcolor="#E2EFDA"];
+  self [label="Fallback: self-managed OpenSearch\n(official images) on a dedicated\nAKS node pool; customer operates it", fillcolor="#FFF2CC"];
+  reject [label="Reject the provider", fillcolor="#F8CBAD"];
+  start -> q1;
+  q1 -> q2 [label="Yes"]; q1 -> reject [label="No"];
+  q2 -> q3 [label="Yes"]; q2 -> reject [label="No"];
+  q3 -> q4 [label="Yes"]; q3 -> reject [label="No"];
+  q4 -> ok [label="Yes"]; q4 -> reject [label="No"];
+  reject -> self [style=dashed, label="no provider passes"];
+
+}

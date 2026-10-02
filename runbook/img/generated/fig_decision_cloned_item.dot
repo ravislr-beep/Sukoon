@@ -1,0 +1,25 @@
+digraph G {
+
+  graph [fontname="Liberation Sans", fontsize=11, bgcolor="white", pad="0.3", nodesep="0.35", ranksep="0.45", fontcolor="#1F3864"];
+  node  [fontname="Liberation Sans", fontsize=10, shape=box, style="rounded,filled", fillcolor="white", color="#44546A", penwidth=1.1, margin="0.14,0.07"];
+  edge  [fontname="Liberation Sans", fontsize=9, color="#44546A", fontcolor="#595959", arrowsize=0.7, penwidth=1.0];
+
+
+  rankdir=TB;
+  start [label="Item found in the cloned database (Section 11.3)", fillcolor="#DCE6F2"];
+  q1 [shape=diamond, style="filled", fillcolor="#FFF2CC", label="Does it point to a Kafka,\nsearch or other endpoint\noutside this environment?", margin="0.04,0.04", fontsize=9.5];
+  q2 [shape=diamond, style="filled", fillcolor="#FFF2CC", label="Does Pega 26.1.1 replace\nit with Helm or SRS\nconfiguration?", margin="0.04,0.04", fontsize=9.5];
+  q3 [shape=diamond, style="filled", fillcolor="#FFF2CC", label="Does Pega document\nit as removed in\n'25 or '26?", margin="0.04,0.04", fontsize=9.5];
+  q4 [shape=diamond, style="filled", fillcolor="#FFF2CC", label="Is it business work\n(queue item, case,\nscheduled run)?", margin="0.04,0.04", fontsize=9.5];
+  rep [label="CHANGE: repoint or disable\nbefore the batch tier starts", fillcolor="#F8CBAD"];
+  chk [label="CHECK after first start:\nlanding page shows the Helm value;\nraise with Pega Support if not", fillcolor="#FFF2CC"];
+  del [label="DELETE with the Pega-documented\nmethod (for example PEGA0179 DSS)", fillcolor="#FFF2CC"];
+  biz [label="DECIDE per kind with the business:\nresolve on 8.8, reprocess on 26.1.1,\nor discard (non-production)", fillcolor="#FFF2CC"];
+  keep [label="KEEP", fillcolor="#E2EFDA"];
+  start -> q1;
+  q1 -> rep [label="Yes"]; q1 -> q2 [label="No"];
+  q2 -> chk [label="Yes"]; q2 -> q3 [label="No"];
+  q3 -> del [label="Yes"]; q3 -> q4 [label="No"];
+  q4 -> biz [label="Yes"]; q4 -> keep [label="No"];
+
+}

@@ -1,0 +1,23 @@
+digraph G {
+
+  graph [fontname="Liberation Sans", fontsize=11, bgcolor="white", pad="0.3", nodesep="0.35", ranksep="0.45", fontcolor="#1F3864"];
+  node  [fontname="Liberation Sans", fontsize=10, shape=box, style="rounded,filled", fillcolor="white", color="#44546A", penwidth=1.1, margin="0.14,0.07"];
+  edge  [fontname="Liberation Sans", fontsize=9, color="#44546A", fontcolor="#595959", arrowsize=0.7, penwidth=1.0];
+
+
+  rankdir=TB;
+  start [label="One SRS per environment, or one shared SRS?", fillcolor="#DCE6F2"];
+  q1 [shape=diamond, style="filled", fillcolor="#FFF2CC", label="Is the environment PROD?", margin="0.04,0.04", fontsize=9.5];
+  q2 [shape=diamond, style="filled", fillcolor="#FFF2CC", label="Must SRS upgrades and\nrestarts be planned per\nenvironment?", margin="0.04,0.04", fontsize=9.5];
+  q3 [shape=diamond, style="filled", fillcolor="#FFF2CC", label="Must each environment use\nits own OpenSearch user\nand index-scoped role?", margin="0.04,0.04", fontsize=9.5];
+  per [label="RECOMMENDED: SRS per environment\nin namespace srs-<env>\nown OpenSearch user, own key set URL", fillcolor="#E2EFDA"];
+  shared [label="Shared SRS for the group\nisolation by customerDeploymentId only;\none OpenSearch user for all", fillcolor="#FFF2CC"];
+  start -> q1;
+  q1 -> per [label="Yes"];
+  q1 -> q2 [label="No"];
+  q2 -> per [label="Yes"];
+  q2 -> q3 [label="No"];
+  q3 -> per [label="Yes"];
+  q3 -> shared [label="No"];
+
+}

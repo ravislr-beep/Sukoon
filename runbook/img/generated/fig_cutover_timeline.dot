@@ -1,0 +1,20 @@
+digraph G {
+
+  graph [fontname="Liberation Sans", fontsize=11, bgcolor="white", pad="0.3", nodesep="0.35", ranksep="0.45", fontcolor="#1F3864"];
+  node  [fontname="Liberation Sans", fontsize=10, shape=box, style="rounded,filled", fillcolor="white", color="#44546A", penwidth=1.1, margin="0.14,0.07"];
+  edge  [fontname="Liberation Sans", fontsize=9, color="#44546A", fontcolor="#595959", arrowsize=0.7, penwidth=1.0];
+
+
+  rankdir=TB; nodesep=0.3; ranksep=0.45; newrank=true;
+  C1 [label="C-1\nHold intake on 8.8\nusers, listeners,\nschedulers", fillcolor="#EDEDED", width=1.35]; C2 [label="C-2\nDrain queues\nrecord zero counts\nand broken items", fillcolor="#EDEDED", width=1.35]; C3 [label="C-3\nStop 8.8\nfinal clone", fillcolor="#F2F2F2", width=1.35]; C4 [label="C-4\nUpgrade clone\ninstaller job", fillcolor="#DCE6F2", width=1.35]; C5 [label="C-5\nClean-up\nand checks", fillcolor="#FFF2CC", width=1.35]; C6 [label="C-6\nFirst start\nintake held", fillcolor="#DCE6F2", width=1.35]; C7 [label="C-7\nFull index build\ncount checks", fillcolor="#E4DFEC", width=1.35]; C8 [label="C-8\nApplication Kafka\ndata sets cutover", fillcolor="#E2EFDA", width=1.35]; C9 [label="C-9\nSmoke tests\nGo/No-Go 2", fillcolor="#FFF2CC", width=1.35]; C10 [label="C-10\nDNS switch\nrelease intake", fillcolor="#E2EFDA", width=1.35];
+  {rank=same; C1; C2; C3; C4; C5}
+  {rank=same; C6; C7; C8; C9; C10}
+  C1 -> C2 -> C3 -> C4 -> C5;
+  C6 -> C7 -> C8 -> C9 -> C10;
+  C5 -> C6;
+  rb [label="Rollback without loss of 26.1.1 work:\nrestart 8.8 on its untouched database,\nwith its embedded Kafka and Elasticsearch", fillcolor="#F8CBAD"];
+  pnr [label="After C-10, rollback loses work done\non 26.1.1 (business decision)", fillcolor="#F8CBAD"];
+  C9 -> rb [style=dashed, label="any step\nup to C-9"];
+  C10 -> pnr [style=dashed];
+
+}

@@ -1,0 +1,28 @@
+digraph G {
+
+  graph [fontname="Liberation Sans", fontsize=11, bgcolor="white", pad="0.3", nodesep="0.35", ranksep="0.45", fontcolor="#1F3864"];
+  node  [fontname="Liberation Sans", fontsize=10, shape=box, style="rounded,filled", fillcolor="white", color="#44546A", penwidth=1.1, margin="0.14,0.07"];
+  edge  [fontname="Liberation Sans", fontsize=9, color="#44546A", fontcolor="#595959", arrowsize=0.7, penwidth=1.0];
+
+
+  rankdir=TB; ranksep=0.3;
+  start [label="Search fails or results are stale", fillcolor="#F8CBAD"];
+  q1 [shape=diamond, style="filled", fillcolor="#FFF2CC", label="SRS pods Ready\n(kubectl get pods\n-n srs-<env>)?", margin="0.04,0.04", fontsize=9.5];
+  q2 [shape=diamond, style="filled", fillcolor="#FFF2CC", label="Pega reaches the SRS\nservice URL from a\npega pod?", margin="0.04,0.04", fontsize=9.5];
+  q3 [shape=diamond, style="filled", fillcolor="#FFF2CC", label="SRS logs show 401 or 403\nfrom token checks?", margin="0.04,0.04", fontsize=9.5];
+  q4 [shape=diamond, style="filled", fillcolor="#FFF2CC", label="OpenSearch cluster\nhealth green or yellow?", margin="0.04,0.04", fontsize=9.5];
+  q5 [shape=diamond, style="filled", fillcolor="#FFF2CC", label="Indexing backlog or\nbroken items on the\nindexer queue processor?", margin="0.04,0.04", fontsize=9.5];
+  f1 [label="Check SRS to OpenSearch:\nDNS, TLS, authSecret, role", fillcolor="#FFF2CC"];
+  f2 [label="Check pegasearch.externalURL\nand network policy pega to srs", fillcolor="#FFF2CC"];
+  f3 [label="Decode token: scope, guid,\nissuer; check OAuthPublicKeyURL\nand firewall rule to Okta", fillcolor="#FFF2CC"];
+  f4 [label="Fix cluster: disk watermark,\nshard allocation, node loss", fillcolor="#FFF2CC"];
+  f5 [label="Kafka path problem: use the\nKafka tree; then requeue", fillcolor="#FFF2CC"];
+  f6 [label="Check index status on the Search\nlanding page; reindex the class", fillcolor="#DCE6F2"];
+  start -> q1;
+  q1 -> f1 [label="No"]; q1 -> q2 [label="Yes"];
+  q2 -> f2 [label="No"]; q2 -> q3 [label="Yes"];
+  q3 -> f3 [label="Yes"]; q3 -> q4 [label="No"];
+  q4 -> f4 [label="Red"]; q4 -> q5 [label="Yes"];
+  q5 -> f5 [label="Yes"]; q5 -> f6 [label="No"];
+
+}

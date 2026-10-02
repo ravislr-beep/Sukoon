@@ -1,0 +1,12 @@
+digraph G {
+
+  graph [fontname="Liberation Sans", fontsize=11, bgcolor="white", pad="0.3", nodesep="0.35", ranksep="0.45", fontcolor="#1F3864"];
+  node  [fontname="Liberation Sans", fontsize=10, shape=box, style="rounded,filled", fillcolor="white", color="#44546A", penwidth=1.1, margin="0.14,0.07"];
+  edge  [fontname="Liberation Sans", fontsize=9, color="#44546A", fontcolor="#595959", arrowsize=0.7, penwidth=1.0];
+
+
+  t [shape=plaintext, style="", label=<<TABLE BORDER="0" CELLBORDER="1" CELLSPACING="2" CELLPADDING="6" COLOR="#44546A">
+  <TR><TD BGCOLOR="white"><B>Layer</B></TD><TD BGCOLOR="white"><B>Kafka (Confluent Cloud)</B></TD><TD BGCOLOR="white"><B>Search (SRS and OpenSearch)</B></TD></TR>
+  <TR><TD BGCOLOR="#1F3864" ALIGN="LEFT"><FONT COLOR="white"><B>Network</B></FONT></TD><TD BGCOLOR="#E2EFDA" ALIGN="LEFT">Firewall allow-list per environment; network policies deny by default</TD><TD BGCOLOR="#E4DFEC" ALIGN="LEFT">Same</TD></TR><TR><TD BGCOLOR="#1F3864" ALIGN="LEFT"><FONT COLOR="white"><B>Identity</B></FONT></TD><TD BGCOLOR="#E2EFDA" ALIGN="LEFT">Service account sa-pega-&lt;env&gt;; own API key</TD><TD BGCOLOR="#E4DFEC" ALIGN="LEFT">OpenSearch user srs-&lt;env&gt;; Okta client pega-srs-&lt;env&gt;</TD></TR><TR><TD BGCOLOR="#1F3864" ALIGN="LEFT"><FONT COLOR="white"><B>Authorization</B></FONT></TD><TD BGCOLOR="#E2EFDA" ALIGN="LEFT">TOPIC and GROUP ACLs on prefix pega-&lt;env&gt;-</TD><TD BGCOLOR="#E4DFEC" ALIGN="LEFT">Role on pega26-&lt;env&gt;*; guid claim checked by SRS</TD></TR><TR><TD BGCOLOR="#1F3864" ALIGN="LEFT"><FONT COLOR="white"><B>Naming</B></FONT></TD><TD BGCOLOR="#E2EFDA" ALIGN="LEFT">streamNamePattern pega-&lt;env&gt;-{stream.name}</TD><TD BGCOLOR="#E4DFEC" ALIGN="LEFT">customerDeploymentId pega26-&lt;env&gt;</TD></TR><TR><TD BGCOLOR="#1F3864" ALIGN="LEFT"><FONT COLOR="white"><B>Capacity</B></FONT></TD><TD BGCOLOR="#E2EFDA" ALIGN="LEFT">Client quota per service account</TD><TD BGCOLOR="#E4DFEC" ALIGN="LEFT">Build schedule; data nodes sized for one build</TD></TR><TR><TD BGCOLOR="#1F3864" ALIGN="LEFT"><FONT COLOR="white"><B>Secrets</B></FONT></TD><TD BGCOLOR="#E2EFDA" ALIGN="LEFT">Key Vault kv-pega-&lt;env&gt;; workload identity per namespace</TD><TD BGCOLOR="#E4DFEC" ALIGN="LEFT">Same</TD></TR><TR><TD BGCOLOR="#1F3864" ALIGN="LEFT"><FONT COLOR="white"><B>Proof</B></FONT></TD><TD BGCOLOR="#E2EFDA" ALIGN="LEFT">IT-01 to IT-04, IT-08 to IT-10</TD><TD BGCOLOR="#E4DFEC" ALIGN="LEFT">IT-05 to IT-07</TD></TR></TABLE>>];
+
+}
