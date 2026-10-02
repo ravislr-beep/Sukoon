@@ -96,6 +96,7 @@ Answer each one directly, in its own clearly titled section or table row, and ci
 11. Which failures must be tested? For each one, how is it caused, what should Pega do, how is the failure detected, and how does the system recover?
 12. What are the known issues and challenges from real implementations, and how are they avoided?
 13. How is it run day to day? Cover monitoring, alerts, rotation, capacity, onboarding a new environment, refreshing an environment from a new clone, and retiring an environment.
+14. What data does Pega actually exchange with Kafka, SRS, OpenSearch and Okta, how sensitive is it, how is it protected in transit and at rest, where does it live and for how long, how is it erased, and what happens to it when a transfer fails?
 
 ## 4. The cloned database: what it brings and what must change
 
@@ -394,6 +395,17 @@ Write these as experience-based guidance: the symptom, the cause, how to prevent
 
 - Telemetry sources for every layer (Pega logs and GC logs, Pega Diagnostic Center, AKS, Confluent Metrics API and audit log, OpenSearch metrics and slow logs, SRS, Okta System Log, firewall), the logging design, dashboards, alerts with thresholds and severity, synthetic checks, and how to follow one incident across systems.
 
+### 6.12 Data flows, classification and protection
+
+- Start from Pega's architecture, not from the vendors' security pages. State what each flow carries: queue processor messages (record key and producer context by default; the whole page when "Queue current snapshot of page" is used), cluster messaging since Hazelcast removal, delayed and broken items in database tables, index documents (only Relevant Records and Custom Search Properties in SRS mode, unless `indexer/srs/indexAllFieldsForFTS` is set), search terms and results, and Okta tokens. Mark every point Pega does not publish as a Pega Support question.
+- A data inventory with the class of each item, and the class of each environment group derived from its database content, including the case where PREPROD holds unmasked production data on a shared non-production service.
+- Controls that keep personal data out of Kafka and search (snapshot option, indexed property list, property encryption with the Pega keystore in Azure Key Vault).
+- Encryption in transit per hop with the check that proves it, and encryption at rest per store, naming the choices fixed at creation: Confluent self-managed keys and their Azure Key Vault network requirements, AKS encryption at host for temp and ephemeral OS disks, and disk keys.
+- Operational copies: heap dumps, broken items, logs, slow logs, audit logs, tooling and support cases.
+- Residency, retention (`retention.ms`, `cleanup.policy`), erasure and snapshots.
+- Data transfer failures: what Pega does, what data is at risk, detection and remediation, including at-least-once delivery, bulk indexing failures and silently skipped fields.
+- Data tests with commands, and the decisions, questions and risks they raise.
+
 ### 6.11 Risks, open decisions, assumptions
 
 - A risk register with likelihood, impact, mitigation and owner.
@@ -406,7 +418,8 @@ Write these as experience-based guidance: the symptom, the cause, how to prevent
   - the environment list;
   - the masking approach;
   - the treatment of each application Kafka data set;
-  - the quota approach.
+  - the quota approach;
+  - encryption keys for Confluent and AKS, the data class of PERF and PREPROD, topic retention, broken item retention and the approved list of indexed properties (6.12).
 - Assumptions, each with the check that would prove it wrong.
 
 ## 7. Evidence rules
@@ -465,19 +478,20 @@ Produce a Word document (DOCX) with an A4 page, a header with the short title, a
 7. Confluent Cloud design and configuration (6.2).
 8. Managed OpenSearch and SRS design and configuration (6.3).
 9. Secrets, certificates and identity.
-10. Helm configuration per environment, for the upgrade run and the deploy run (6.4).
-11. The cloned database: gating questions, inventory, clean-up and first-start control (section 4).
-12. The 8.8 content question: decision and treatment (section 5).
-13. Deployment runbook per environment, with numbered steps, owner, check and evidence.
-14. Production cutover and rollback (6.7).
-15. Test strategy, rehearsals and failure scenarios (6.5).
-16. Performance engineering and sizing (6.9).
-17. Known issues and challenges (6.6).
-18. Troubleshooting, with decision trees and symptom tables.
-19. Observability, monitoring and logging (6.10).
-20. Operations, onboarding, refresh and retirement (6.8).
-21. Risks, open decisions, assumptions and source reconciliation (6.11, 7.5).
-22. **Appendices:**
+10. Data flows, classification and protection (6.12).
+11. Helm configuration per environment, for the upgrade run and the deploy run (6.4).
+12. The cloned database: gating questions, inventory, clean-up and first-start control (section 4).
+13. The 8.8 content question: decision and treatment (section 5).
+14. Deployment runbook per environment, with numbered steps, owner, check and evidence.
+15. Production cutover and rollback (6.7).
+16. Test strategy, rehearsals and failure scenarios (6.5).
+17. Performance engineering and sizing (6.9).
+18. Known issues and challenges (6.6).
+19. Troubleshooting, with decision trees and symptom tables.
+20. Observability, monitoring and logging (6.10).
+21. Operations, onboarding, refresh and retirement (6.8).
+22. Risks, open decisions, assumptions and source reconciliation (6.11, 7.5).
+23. **Appendices:**
     - A. Configuration inventory per environment.
     - B. Complete Helm values files (upgrade run and deploy run).
     - C. Command reference.
@@ -487,7 +501,7 @@ Produce a Word document (DOCX) with an A4 page, a header with the short title, a
     - G. Image sources and attribution.
     - H. Sizing calculator.
 
-Expected size: 120 to 140 pages. Diagrams must be legible when printed on A4. Code blocks must not wrap.
+Expected size: 130 to 150 pages. Diagrams must be legible when printed on A4. Code blocks must not wrap.
 
 ## 10. Acceptance checks before release
 
@@ -502,7 +516,8 @@ The document is complete only when every check passes. Report the result of each
 7. Every failure scenario has its cause, expected behaviour, detection, recovery and pass criteria filled in.
 8. Every cloned-database item in section 4.2 has a source, an action and a time point.
 9. Every Pega or third-party figure has a source line.
-10. The reviewer checklists (section 11) are completed, and their findings are fixed or logged.
+10. Every item in the data inventory (6.12) maps to a protection control, a retention rule and a data test.
+11. The reviewer checklists (section 11) are completed, and their findings are fixed or logged.
 
 ## 11. Expert review before release
 
@@ -516,4 +531,5 @@ Review the finished document once from each viewpoint below. Fix what you find, 
 | Azure cloud architect | Private Link and private endpoint DNS work from AKS pods; egress rules and certificate trust are complete; no public path exists to Kafka or OpenSearch; no cloned environment can reach production endpoints |
 | Kafka engineer | Cluster type limits, ACLs, prefixes, partition budget, quotas, message size, application data set cutover and failure tests are correct for Confluent Cloud |
 | OpenSearch engineer | Versions match the SRS matrix; cluster settings, roles, index patterns, shard budget, watermarks, index build planning, snapshots and failure tests are correct for the chosen provider |
+| Data security officer | Every data item that leaves the database has a class, a store, a retention, an in-transit and an at-rest control, an erasure path and a test; no Pega behaviour is assumed where Pega is silent; choices fixed at creation are decided before the resource exists |
 | Customer IT reader | A new engineer can follow each runbook step without outside help; every table is explained; nothing reads as generic or unproven |
