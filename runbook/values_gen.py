@@ -3,13 +3,21 @@ import envs as E
 
 SIZES = {
     # code: (web replicas, web max, batch replicas, batch max, srs replicas)
-    "dev": (1, 2, 1, 2, 1),
-    "sit": (1, 3, 1, 3, 1),
-    "uat": (2, 3, 1, 3, 1),
+    "dev": (1, 2, 1, 2, 2),
+    "sit": (1, 3, 1, 3, 2),
+    "uat": (2, 3, 1, 3, 2),
     "perf": (3, 6, 3, 6, 3),
     "ppd": (3, 6, 3, 6, 3),
     "prd": (3, 6, 3, 6, 3),
 }
+
+JAVA_OPTS = [
+    "-Xlog:gc*,gc+heap=debug,gc+humongous=debug:file=/usr/local/tomcat/logs/gc.log:uptime,pid,level,time,tags:filecount=3,filesize=2M",
+    "-XX:MaxMetaspaceSize=768m",
+    "-XX:+UseStringDeduplication",
+    "-XX:+HeapDumpOnOutOfMemoryError",
+]
+JAVA_OPTS_YAML = "javaOpts: >-\n" + "\n".join("        " + o for o in JAVA_OPTS)
 
 RUNS = {
     "upgrade": "Upgrade run: installer job only, no Pega pods",
@@ -78,6 +86,7 @@ def pega_values(code, run):
         limits:
           memory: "12Gi"
           cpu: 4
+      {JAVA_OPTS_YAML}
       hpa:
         enabled: true
         minReplicas: {web}
@@ -103,6 +112,7 @@ def pega_values(code, run):
         limits:
           memory: "12Gi"
           cpu: 4
+      {JAVA_OPTS_YAML}
       pdb:
         enabled: true
         minAvailable: 1
@@ -165,10 +175,10 @@ srs:
     srsImage: "<acr-name>.azurecr.io/platform-services/search-n-reporting-service-os:<tag>"
     resources:
       requests:
-        cpu: 650m
+        cpu: 1
         memory: "4Gi"
       limits:
-        cpu: 1300m
+        cpu: 2
         memory: "4Gi"
     affinity:
       podAntiAffinity:
