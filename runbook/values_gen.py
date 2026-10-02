@@ -85,6 +85,13 @@ def pega_values(code, run):
       pdb:
         enabled: true
         minAvailable: 1
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app: pega-web
     - name: "batch"
       nodeType: "BackgroundProcessing,Search,Batch,RealTime,\\
         Custom1,Custom2,Custom3,Custom4,Custom5,BIX"
@@ -99,6 +106,13 @@ def pega_values(code, run):
       pdb:
         enabled: true
         minAvailable: 1
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app: pega-batch
 cassandra:
   enabled: false
 hazelcast:
@@ -117,7 +131,7 @@ stream:
   external_secret_name: "pega-stream-secret"
 pegasearch:
   externalSearchService: true
-  externalURL: "https://srs-{code}.srs-{code}.svc.cluster.local"
+  externalURL: "https://srs-{code}.srs-{code}.svc.cluster.local:8443"
   srsAuth:
     enabled: true
     url: "https://<okta-domain>/oauth2/<auth-server-id>/v1/token"
@@ -149,6 +163,22 @@ srs:
   srsRuntime:
     replicaCount: {srs}
     srsImage: "<acr-name>.azurecr.io/platform-services/search-n-reporting-service-os:<tag>"
+    resources:
+      requests:
+        cpu: 650m
+        memory: "4Gi"
+      limits:
+        cpu: 1300m
+        memory: "4Gi"
+    affinity:
+      podAntiAffinity:
+        preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              topologyKey: topology.kubernetes.io/zone
+              labelSelector:
+                matchLabels:
+                  app.kubernetes.io/name: srs-service
     env:
       AuthEnabled: true
       OAuthPublicKeyURL: "<okta-jwks-url>"
@@ -168,13 +198,70 @@ srs:
     port: 443
     protocol: https
     tls:
-      enabled: true
+      enabled: false
     basicAuthentication:
       enabled: true
     authSecret: "srs-search-credentials"
     requireInternetAccess: false
     networkPolicy:
-      enabled: true
+      enabled: false
+'''
+
+
+def srs_netpol(code):
+    return f'''apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: srs-{code}-default-deny
+  namespace: srs-{code}
+spec:
+  podSelector: {{}}
+  policyTypes: ["Ingress", "Egress"]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: srs-{code}-allow
+  namespace: srs-{code}
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: srs-service
+  policyTypes: ["Ingress", "Egress"]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: pega-{code}
+      ports:
+        - protocol: TCP
+          port: 8443
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    - to:
+        - ipBlock:
+            cidr: "<opensearch-private-endpoint-cidr>"
+      ports:
+        - protocol: TCP
+          port: 443
+    - to:
+        - ipBlock:
+            cidr: "0.0.0.0/0"
+            except: ["10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"]
+      ports:
+        - protocol: TCP
+          port: 443
 '''
 
 
@@ -184,4 +271,5 @@ def all_files():
         for run in RUNS:
             out[f"pega-{code}-{run}.yaml"] = pega_values(code, run)
         out[f"backingservices-{code}.yaml"] = srs_values(code)
+        out[f"netpol-srs-{code}.yaml"] = srs_netpol(code)
     return out
