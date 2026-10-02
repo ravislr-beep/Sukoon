@@ -386,6 +386,7 @@ class Builder:
         _borders(tbl, color=edge, size=6)
         _cell_margins(tbl, 80, 80, 140, 140)
         _fix_grid(tbl, [16.6])
+        _no_split(tbl.rows[0])
         cell = tbl.rows[0].cells[0]
         _shade(cell._tc, fill)
         para = cell.paragraphs[0]
@@ -419,6 +420,8 @@ class Builder:
         cell = tbl.rows[0].cells[0]
         _shade(cell._tc, "F3F3F3")
         lines = text.strip("\n").split("\n")
+        if len(lines) <= 60:
+            _no_split(tbl.rows[0])
         para = cell.paragraphs[0]
         for i, line in enumerate(lines):
             if i:
