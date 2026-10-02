@@ -5,21 +5,42 @@ digraph G {
   edge  [fontname="Liberation Sans", fontsize=9, color="#44546A", fontcolor="#595959", arrowsize=0.7, penwidth=1.0];
 
 
-  rankdir=LR;
-  pega [label="Pega web and batch\nlogs, alerts", fillcolor="#DCE6F2"];
-  srs [label="SRS pods\nlogs, errors", fillcolor="#E4DFEC"];
-  aks [label="AKS nodes and pods\nContainer Insights", fillcolor="#F2F2F2"];
-  ccl [label="Confluent Cloud\nMetrics API by principal_id", fillcolor="#E2EFDA"];
-  srch [label="OpenSearch provider\nhealth, disk, JVM", fillcolor="#E2EFDA"];
-  net [label="Synthetic checks\nDNS, TCP, TLS expiry", fillcolor="#F2F2F2"];
-  law [label="Log Analytics workspace\nand Azure Monitor metrics", fillcolor="#F2F2F2"];
-  siem [label="SIEM", fillcolor="#FCE4D6"];
-  dash [label="Dashboard per environment\nand per shared group", fillcolor="#E2EFDA"];
-  alert [label="Alert rules and\non-call routing", fillcolor="#E2EFDA"];
-  pega -> law; srs -> law; aks -> law; net -> law;
-  ccl -> law [label="exporter"];
-  srch -> law [label="provider integration"];
-  law -> siem [label="security events"];
-  law -> dash; law -> alert;
+  rankdir=LR; nodesep=0.16; ranksep=0.7;
+  subgraph cluster_src { label="Sources (every signal carries the environment code)"; style="dashed,rounded"; color="#595959"; fontsize=10;
+    pega [label="Pega web and batch pods\nPegaRULES, ALERT and GC logs\nto stdout", fillcolor="#DCE6F2"];
+    pdcag [label="Pega health, alerts\nand exceptions", fillcolor="#DCE6F2"];
+    srs [label="SRS pods\nlogs to stdout", fillcolor="#E4DFEC"];
+    aks [label="AKS nodes, pods, HPA\nand control plane", fillcolor="#F2F2F2"];
+    syn [label="Synthetic check CronJob\nper namespace (K, S, O checks)", fillcolor="#F2F2F2"];
+    ccm [label="Confluent Metrics API\n/export, by principal", fillcolor="#E2EFDA"];
+    cca [label="Confluent audit log cluster\nconfluent-audit-log-events", fillcolor="#E2EFDA"];
+    osm [label="OpenSearch provider metrics\nslow logs, audit logs", fillcolor="#E2EFDA"];
+    okl [label="Okta System Log\ntoken and rate-limit events", fillcolor="#FCE4D6"];
+    fwl [label="Azure Firewall and\nflow logs", fillcolor="#F2F2F2"];
+  }
+  subgraph cluster_col { label="Collection"; style="dashed,rounded"; color="#595959"; fontsize=10;
+    ama [label="Azure Monitor agent\ncontainer log collection", fillcolor="#F2F2F2"];
+    prom [label="Managed Prometheus\nscrape jobs", fillcolor="#F2F2F2"];
+    conn [label="SIEM connectors\nand consumers", fillcolor="#FCE4D6"];
+  }
+  subgraph cluster_store { label="Stores"; style="dashed,rounded"; color="#595959"; fontsize=10;
+    law [label="Log Analytics\nnon-production and production\nworkspaces", fillcolor="#F2F2F2"];
+    amw [label="Azure Monitor workspace\n(Prometheus metrics)", fillcolor="#F2F2F2"];
+    siem [label="SIEM", fillcolor="#FCE4D6"];
+    pdc [label="Pega Diagnostic Center\n(one monitored system\nper environment)", fillcolor="#DCE6F2"];
+  }
+  subgraph cluster_use { label="Use"; style="dashed,rounded"; color="#595959"; fontsize=10;
+    graf [label="Grafana dashboards\nper environment and\nper shared group", fillcolor="#E2EFDA"];
+    alert [label="Alert rules\nto on-call by tier", fillcolor="#E2EFDA"];
+    soc [label="Security operations", fillcolor="#FCE4D6"];
+  }
+  pega -> ama; srs -> ama; aks -> ama; syn -> ama;
+  aks -> prom; syn -> prom; ccm -> prom [label="HTTPS scrape"]; osm -> prom [label="if exposed"];
+  cca -> conn; okl -> conn; fwl -> law;
+  osm -> law [label="provider export", style=dashed];
+  pdcag -> pdc [label="HTTPS, one way"];
+  ama -> law; prom -> amw; conn -> siem; law -> siem [label="security events"];
+  law -> graf; amw -> graf; law -> alert; amw -> alert; pdc -> alert [style=dashed, label="notifications"];
+  siem -> soc;
 
 }

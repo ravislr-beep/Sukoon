@@ -1,0 +1,33 @@
+digraph G {
+
+  graph [fontname="Liberation Sans", fontsize=11, bgcolor="white", pad="0.3", nodesep="0.35", ranksep="0.45", fontcolor="#1F3864"];
+  node  [fontname="Liberation Sans", fontsize=10, shape=box, style="rounded,filled", fillcolor="white", color="#44546A", penwidth=1.1, margin="0.14,0.07"];
+  edge  [fontname="Liberation Sans", fontsize=9, color="#44546A", fontcolor="#595959", arrowsize=0.7, penwidth=1.0];
+
+
+  rankdir=TB; nodesep=0.35; ranksep=0.45;
+  lg [label="Load generators\n(own subnet, outside\nthe Pega node pools)", fillcolor="#F2F2F2"];
+  agw [label="Application Gateway", fillcolor="#F2F2F2"];
+  web [label="Web tier", fillcolor="#DCE6F2"];
+  k [label="Confluent cc-np2\nprefix pega-perf-", fillcolor="#E2EFDA"];
+  bat [label="Batch tier\nqueue processors", fillcolor="#DCE6F2"];
+  srs [label="SRS srs-perf", fillcolor="#E4DFEC"];
+  os [label="OpenSearch os-np2", fillcolor="#E2EFDA"];
+  db [label="Pega database\n(full-size masked clone)", shape=cylinder, style=filled, fillcolor="#F2F2F2"];
+  okta [label="Okta", fillcolor="#FCE4D6"];
+  lg -> agw -> web;
+  web -> k [label="enqueue"]; k -> bat [label="consume"];
+  web -> db; bat -> db;
+  bat -> srs [label="index"]; web -> srs [label="query"]; srs -> os;
+  web -> okta [style=dashed]; bat -> okta [style=dashed];
+  m1 [shape=ellipse, fillcolor="#FFF2CC", fontsize=9, label="M1 response time\nand errors per journey"];
+  m2 [shape=ellipse, fillcolor="#FFF2CC", fontsize=9, label="M2 pod CPU, heap,\nGC, HPA events"];
+  m3 [shape=ellipse, fillcolor="#FFF2CC", fontsize=9, label="M3 bytes, requests,\nconnections, lag, throttle"];
+  m4 [shape=ellipse, fillcolor="#FFF2CC", fontsize=9, label="M4 ready to process,\nthroughput, broken items"];
+  m5 [shape=ellipse, fillcolor="#FFF2CC", fontsize=9, label="M5 query latency,\nindexing rate, rejections"];
+  m6 [shape=ellipse, fillcolor="#FFF2CC", fontsize=9, label="M6 database CPU,\nwaits, connections"];
+  m1 -> lg [style=dotted, arrowhead=none]; m2 -> web [style=dotted, arrowhead=none];
+  m3 -> k [style=dotted, arrowhead=none]; m4 -> bat [style=dotted, arrowhead=none];
+  m5 -> os [style=dotted, arrowhead=none]; m6 -> db [style=dotted, arrowhead=none];
+
+}

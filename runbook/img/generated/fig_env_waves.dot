@@ -1,0 +1,23 @@
+digraph G {
+
+  graph [fontname="Liberation Sans", fontsize=11, bgcolor="white", pad="0.3", nodesep="0.35", ranksep="0.45", fontcolor="#1F3864"];
+  node  [fontname="Liberation Sans", fontsize=10, shape=box, style="rounded,filled", fillcolor="white", color="#44546A", penwidth=1.1, margin="0.14,0.07"];
+  edge  [fontname="Liberation Sans", fontsize=9, color="#44546A", fontcolor="#595959", arrowsize=0.7, penwidth=1.0];
+
+
+  rankdir=TB; nodesep=0.5; ranksep=0.55;
+  w0 [label="Wave 0  Foundations\nlanding zone, hub firewall,\nprivate DNS, ACR, pipelines,\nOkta authorization servers,\nmonitoring workspaces", fillcolor="#F2F2F2"];
+  w1 [label="Wave 1  DEV\nnew: cc-np1, os-np1,\nPrivate Link and DNS for NP1\nproves every step, the Okta\nclaim, the role and the clone", fillcolor="#DCE6F2"];
+  w2 [label="Wave 2  SIT, then UAT\nnew: per-environment objects only\nreuse: NP1 services\nisolation tests IT-01 to IT-10", fillcolor="#DCE6F2"];
+  w3 [label="Wave 3  PERF\nnew: cc-np2, os-np2 at PROD type\nfull-size clone, load tests,\nindex build timing, sizing", fillcolor="#DCE6F2"];
+  w4 [label="Wave 4  PREPROD\nnew: per-environment objects only\nreuse: NP2 services\ntwo timed rehearsals", fillcolor="#DCE6F2"];
+  w5 [label="Wave 5  PROD\nnew: cc-prd, os-prd, PROD Okta\nserver, kv-pega-prd\nfinal clone and cutover", fillcolor="#E2EFDA"];
+  w0 -> w1 [label="connectivity\nchecks pass"];
+  w1 -> w2 [label="DEV first-start\nGo/No-Go (M2)"];
+  w2 -> w3 [label="isolation\ntests pass"];
+  w3 -> w4 [label="PROD sizes\nagreed (M3)"];
+  w4 -> w5 [label="Go/No-Go 1\n(M4, M5)"];
+  { rank=same; w0; w1; w2; }
+  { rank=same; w3; w4; w5; }
+
+}

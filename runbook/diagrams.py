@@ -538,24 +538,169 @@ def troubleshoot_search():
 
 def observability():
     body = f'''
-  rankdir=LR;
-  pega [label="Pega web and batch\\nlogs, alerts", fillcolor="{PEGA}"];
-  srs [label="SRS pods\\nlogs, errors", fillcolor="{BACK}"];
-  aks [label="AKS nodes and pods\\nContainer Insights", fillcolor="{AZ}"];
-  ccl [label="Confluent Cloud\\nMetrics API by principal_id", fillcolor="{EXT}"];
-  srch [label="OpenSearch provider\\nhealth, disk, JVM", fillcolor="{EXT}"];
-  net [label="Synthetic checks\\nDNS, TCP, TLS expiry", fillcolor="{AZ}"];
-  law [label="Log Analytics workspace\\nand Azure Monitor metrics", fillcolor="{AZ}"];
-  siem [label="SIEM", fillcolor="{SEC}"];
-  dash [label="Dashboard per environment\\nand per shared group", fillcolor="{OK}"];
-  alert [label="Alert rules and\\non-call routing", fillcolor="{OK}"];
-  pega -> law; srs -> law; aks -> law; net -> law;
-  ccl -> law [label="exporter"];
-  srch -> law [label="provider integration"];
-  law -> siem [label="security events"];
-  law -> dash; law -> alert;
+  rankdir=LR; nodesep=0.16; ranksep=0.7;
+  subgraph cluster_src {{ label="Sources (every signal carries the environment code)"; style="dashed,rounded"; color="{GREY}"; fontsize=10;
+    pega [label="Pega web and batch pods\\nPegaRULES, ALERT and GC logs\\nto stdout", fillcolor="{PEGA}"];
+    pdcag [label="Pega health, alerts\\nand exceptions", fillcolor="{PEGA}"];
+    srs [label="SRS pods\\nlogs to stdout", fillcolor="{BACK}"];
+    aks [label="AKS nodes, pods, HPA\\nand control plane", fillcolor="{AZ}"];
+    syn [label="Synthetic check CronJob\\nper namespace (K, S, O checks)", fillcolor="{AZ}"];
+    ccm [label="Confluent Metrics API\\n/export, by principal", fillcolor="{EXT}"];
+    cca [label="Confluent audit log cluster\\nconfluent-audit-log-events", fillcolor="{EXT}"];
+    osm [label="OpenSearch provider metrics\\nslow logs, audit logs", fillcolor="{EXT}"];
+    okl [label="Okta System Log\\ntoken and rate-limit events", fillcolor="{SEC}"];
+    fwl [label="Azure Firewall and\\nflow logs", fillcolor="{AZ}"];
+  }}
+  subgraph cluster_col {{ label="Collection"; style="dashed,rounded"; color="{GREY}"; fontsize=10;
+    ama [label="Azure Monitor agent\\ncontainer log collection", fillcolor="{AZ}"];
+    prom [label="Managed Prometheus\\nscrape jobs", fillcolor="{AZ}"];
+    conn [label="SIEM connectors\\nand consumers", fillcolor="{SEC}"];
+  }}
+  subgraph cluster_store {{ label="Stores"; style="dashed,rounded"; color="{GREY}"; fontsize=10;
+    law [label="Log Analytics\\nnon-production and production\\nworkspaces", fillcolor="{AZ}"];
+    amw [label="Azure Monitor workspace\\n(Prometheus metrics)", fillcolor="{AZ}"];
+    siem [label="SIEM", fillcolor="{SEC}"];
+    pdc [label="Pega Diagnostic Center\\n(one monitored system\\nper environment)", fillcolor="{PEGA}"];
+  }}
+  subgraph cluster_use {{ label="Use"; style="dashed,rounded"; color="{GREY}"; fontsize=10;
+    graf [label="Grafana dashboards\\nper environment and\\nper shared group", fillcolor="{OK}"];
+    alert [label="Alert rules\\nto on-call by tier", fillcolor="{OK}"];
+    soc [label="Security operations", fillcolor="{SEC}"];
+  }}
+  pega -> ama; srs -> ama; aks -> ama; syn -> ama;
+  aks -> prom; syn -> prom; ccm -> prom [label="HTTPS scrape"]; osm -> prom [label="if exposed"];
+  cca -> conn; okl -> conn; fwl -> law;
+  osm -> law [label="provider export", style=dashed];
+  pdcag -> pdc [label="HTTPS, one way"];
+  ama -> law; prom -> amw; conn -> siem; law -> siem [label="security events"];
+  law -> graf; amw -> graf; law -> alert; amw -> alert; pdc -> alert [style=dashed, label="notifications"];
+  siem -> soc;
 '''
     render("fig_observability", body)
+
+
+def zone_resilience():
+    def zone(n):
+        return f'''
+  subgraph cluster_z{n} {{ label="Availability zone {n}"; style="rounded"; color="{GREY}"; fontsize=10;
+    w{n} [label="Web pod", fillcolor="{PEGA}"];
+    b{n} [label="Batch pod", fillcolor="{PEGA}"];
+    s{n} [label="SRS pod", fillcolor="{BACK}"];
+    pe{n} [label="Confluent private\\nendpoint (zonal)", fillcolor="{AZ}"];
+    om{n} [label="OpenSearch\\ncluster-manager", fillcolor="{EXT}"];
+    od{n} [label="OpenSearch\\ndata node", fillcolor="{EXT}"];
+    br{n} [label="Kafka brokers\\n(Confluent managed)", fillcolor="{EXT}"];
+  }}'''
+    body = f'''
+  rankdir=TB; nodesep=0.25; ranksep=0.4; newrank=true;
+  agw [label="Application Gateway v2\\nzone-redundant", fillcolor="{AZ}"];
+  fw [label="Azure Firewall\\nzone-redundant", fillcolor="{AZ}"];
+  {zone(1)} {zone(2)} {zone(3)}
+  db [label="Pega database\\nzone-redundant high availability", shape=cylinder, style=filled, fillcolor="{AZ}"];
+  kv [label="Key Vault\\n(regional, zone-resilient)", fillcolor="{SEC}"];
+  agw -> w1; agw -> w2; agw -> w3;
+  w1 -> b1 [style=invis]; w2 -> b2 [style=invis]; w3 -> b3 [style=invis];
+  b1 -> s1 [style=invis]; b2 -> s2 [style=invis]; b3 -> s3 [style=invis];
+  s1 -> pe1 [style=invis]; s2 -> pe2 [style=invis]; s3 -> pe3 [style=invis];
+  pe1 -> br1; pe2 -> br2; pe3 -> br3;
+  br1 -> om1 [style=invis]; br2 -> om2 [style=invis]; br3 -> om3 [style=invis];
+  om1 -> od1 [style=invis]; om2 -> od2 [style=invis]; om3 -> od3 [style=invis];
+  od1 -> db [style=invis]; od2 -> db [style=invis]; od3 -> kv [style=invis];
+  fw -> agw [style=invis];
+  note [shape=note, fillcolor="white", fontsize=9, label="Rule: losing any one zone leaves enough Pega pods,\\nSRS pods, OpenSearch replicas and Kafka replicas\\nto carry peak load. Node pools are sized at 1.5 times\\npeak so two zones hold the full load."];
+  {{ rank=same; agw; fw; note; }}
+'''
+    render("fig_zone_resilience", body)
+
+
+def env_waves():
+    body = f'''
+  rankdir=TB; nodesep=0.5; ranksep=0.55;
+  w0 [label="Wave 0  Foundations\\nlanding zone, hub firewall,\\nprivate DNS, ACR, pipelines,\\nOkta authorization servers,\\nmonitoring workspaces", fillcolor="{AZ}"];
+  w1 [label="Wave 1  DEV\\nnew: cc-np1, os-np1,\\nPrivate Link and DNS for NP1\\nproves every step, the Okta\\nclaim, the role and the clone", fillcolor="{PEGA}"];
+  w2 [label="Wave 2  SIT, then UAT\\nnew: per-environment objects only\\nreuse: NP1 services\\nisolation tests IT-01 to IT-10", fillcolor="{PEGA}"];
+  w3 [label="Wave 3  PERF\\nnew: cc-np2, os-np2 at PROD type\\nfull-size clone, load tests,\\nindex build timing, sizing", fillcolor="{PEGA}"];
+  w4 [label="Wave 4  PREPROD\\nnew: per-environment objects only\\nreuse: NP2 services\\ntwo timed rehearsals", fillcolor="{PEGA}"];
+  w5 [label="Wave 5  PROD\\nnew: cc-prd, os-prd, PROD Okta\\nserver, kv-pega-prd\\nfinal clone and cutover", fillcolor="{OK}"];
+  w0 -> w1 [label="connectivity\\nchecks pass"];
+  w1 -> w2 [label="DEV first-start\\nGo/No-Go (M2)"];
+  w2 -> w3 [label="isolation\\ntests pass"];
+  w3 -> w4 [label="PROD sizes\\nagreed (M3)"];
+  w4 -> w5 [label="Go/No-Go 1\\n(M4, M5)"];
+  {{ rank=same; w0; w1; w2; }}
+  {{ rank=same; w3; w4; w5; }}
+'''
+    render("fig_env_waves", body)
+
+
+def perf_harness():
+    body = f'''
+  rankdir=TB; nodesep=0.35; ranksep=0.45;
+  lg [label="Load generators\\n(own subnet, outside\\nthe Pega node pools)", fillcolor="{AZ}"];
+  agw [label="Application Gateway", fillcolor="{AZ}"];
+  web [label="Web tier", fillcolor="{PEGA}"];
+  k [label="Confluent cc-np2\\nprefix pega-perf-", fillcolor="{EXT}"];
+  bat [label="Batch tier\\nqueue processors", fillcolor="{PEGA}"];
+  srs [label="SRS srs-perf", fillcolor="{BACK}"];
+  os [label="OpenSearch os-np2", fillcolor="{EXT}"];
+  db [label="Pega database\\n(full-size masked clone)", shape=cylinder, style=filled, fillcolor="{AZ}"];
+  okta [label="Okta", fillcolor="{SEC}"];
+  lg -> agw -> web;
+  web -> k [label="enqueue"]; k -> bat [label="consume"];
+  web -> db; bat -> db;
+  bat -> srs [label="index"]; web -> srs [label="query"]; srs -> os;
+  web -> okta [style=dashed]; bat -> okta [style=dashed];
+  m1 [shape=ellipse, fillcolor="{DEC}", fontsize=9, label="M1 response time\\nand errors per journey"];
+  m2 [shape=ellipse, fillcolor="{DEC}", fontsize=9, label="M2 pod CPU, heap,\\nGC, HPA events"];
+  m3 [shape=ellipse, fillcolor="{DEC}", fontsize=9, label="M3 bytes, requests,\\nconnections, lag, throttle"];
+  m4 [shape=ellipse, fillcolor="{DEC}", fontsize=9, label="M4 ready to process,\\nthroughput, broken items"];
+  m5 [shape=ellipse, fillcolor="{DEC}", fontsize=9, label="M5 query latency,\\nindexing rate, rejections"];
+  m6 [shape=ellipse, fillcolor="{DEC}", fontsize=9, label="M6 database CPU,\\nwaits, connections"];
+  m1 -> lg [style=dotted, arrowhead=none]; m2 -> web [style=dotted, arrowhead=none];
+  m3 -> k [style=dotted, arrowhead=none]; m4 -> bat [style=dotted, arrowhead=none];
+  m5 -> os [style=dotted, arrowhead=none]; m6 -> db [style=dotted, arrowhead=none];
+'''
+    render("fig_perf_harness", body)
+
+
+def sizing_flow():
+    body = f'''
+  rankdir=LR; nodesep=0.3; ranksep=0.45;
+  i1 [label="8.8 production facts\\npeak users, case volumes,\\nqueue item rates, search rate", fillcolor="{OLD}"];
+  i2 [label="DEV measurements\\ntopics, partitions, connections\\nper pod, index size", fillcolor="{PEGA}"];
+  calc [label="Sizing calculator\\nKafka units, OpenSearch nodes\\nand storage, AKS nodes,\\ntoken rate", fillcolor="{EXT}"];
+  perf [label="PERF load tests\\nat production volume", fillcolor="{PEGA}"];
+  {decision("ok", "Targets met\\nwith headroom?")}
+  adj [label="Adjust inputs\\nor sizes", fillcolor="{STOP}"];
+  sign [label="PROD sizes signed\\noff at M3", fillcolor="{OK}"];
+  run [label="Production monitoring\\nquarterly capacity review", fillcolor="{AZ}"];
+  i1 -> calc; i2 -> calc; calc -> perf -> ok;
+  ok -> adj [label="no"]; adj -> calc;
+  ok -> sign [label="yes"]; sign -> run; run -> calc [style=dashed, label="actual usage"];
+'''
+    render("fig_sizing_flow", body)
+
+
+def isolation_layers():
+    rows = [
+        ("Network", "Firewall allow-list per environment; network policies deny by default", "Same"),
+        ("Identity", "Service account sa-pega-&lt;env&gt;; own API key", "OpenSearch user srs-&lt;env&gt;; Okta client pega-srs-&lt;env&gt;"),
+        ("Authorization", "TOPIC and GROUP ACLs on prefix pega-&lt;env&gt;-", "Role on pega26-&lt;env&gt;*; guid claim checked by SRS"),
+        ("Naming", "streamNamePattern pega-&lt;env&gt;-{stream.name}", "customerDeploymentId pega26-&lt;env&gt;"),
+        ("Capacity", "Client quota per service account", "Build schedule; data nodes sized for one build"),
+        ("Secrets", "Key Vault kv-pega-&lt;env&gt;; workload identity per namespace", "Same"),
+        ("Proof", "IT-01 to IT-04, IT-08 to IT-10", "IT-05 to IT-07"),
+    ]
+    cells = "".join(
+        f'<TR><TD BGCOLOR="{NAVY}" ALIGN="LEFT"><FONT COLOR="white"><B>{a}</B></FONT></TD>'
+        f'<TD BGCOLOR="{EXT}" ALIGN="LEFT">{k}</TD><TD BGCOLOR="{BACK}" ALIGN="LEFT">{s}</TD></TR>'
+        for a, k, s in rows)
+    body = f'''
+  t [shape=plaintext, style="", label=<<TABLE BORDER="0" CELLBORDER="1" CELLSPACING="2" CELLPADDING="6" COLOR="{LINE}">
+  <TR><TD BGCOLOR="white"><B>Layer</B></TD><TD BGCOLOR="white"><B>Kafka (Confluent Cloud)</B></TD><TD BGCOLOR="white"><B>Search (SRS and OpenSearch)</B></TD></TR>
+  {cells}</TABLE>>];
+'''
+    render("fig_isolation_layers", body)
 
 
 if __name__ == "__main__":
@@ -584,3 +729,8 @@ if __name__ == "__main__":
     troubleshoot_kafka()
     troubleshoot_search()
     observability()
+    zone_resilience()
+    env_waves()
+    perf_harness()
+    sizing_flow()
+    isolation_layers()

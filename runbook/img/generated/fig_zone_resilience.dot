@@ -1,0 +1,53 @@
+digraph G {
+
+  graph [fontname="Liberation Sans", fontsize=11, bgcolor="white", pad="0.3", nodesep="0.35", ranksep="0.45", fontcolor="#1F3864"];
+  node  [fontname="Liberation Sans", fontsize=10, shape=box, style="rounded,filled", fillcolor="white", color="#44546A", penwidth=1.1, margin="0.14,0.07"];
+  edge  [fontname="Liberation Sans", fontsize=9, color="#44546A", fontcolor="#595959", arrowsize=0.7, penwidth=1.0];
+
+
+  rankdir=TB; nodesep=0.25; ranksep=0.4; newrank=true;
+  agw [label="Application Gateway v2\nzone-redundant", fillcolor="#F2F2F2"];
+  fw [label="Azure Firewall\nzone-redundant", fillcolor="#F2F2F2"];
+  
+  subgraph cluster_z1 { label="Availability zone 1"; style="rounded"; color="#595959"; fontsize=10;
+    w1 [label="Web pod", fillcolor="#DCE6F2"];
+    b1 [label="Batch pod", fillcolor="#DCE6F2"];
+    s1 [label="SRS pod", fillcolor="#E4DFEC"];
+    pe1 [label="Confluent private\nendpoint (zonal)", fillcolor="#F2F2F2"];
+    om1 [label="OpenSearch\ncluster-manager", fillcolor="#E2EFDA"];
+    od1 [label="OpenSearch\ndata node", fillcolor="#E2EFDA"];
+    br1 [label="Kafka brokers\n(Confluent managed)", fillcolor="#E2EFDA"];
+  } 
+  subgraph cluster_z2 { label="Availability zone 2"; style="rounded"; color="#595959"; fontsize=10;
+    w2 [label="Web pod", fillcolor="#DCE6F2"];
+    b2 [label="Batch pod", fillcolor="#DCE6F2"];
+    s2 [label="SRS pod", fillcolor="#E4DFEC"];
+    pe2 [label="Confluent private\nendpoint (zonal)", fillcolor="#F2F2F2"];
+    om2 [label="OpenSearch\ncluster-manager", fillcolor="#E2EFDA"];
+    od2 [label="OpenSearch\ndata node", fillcolor="#E2EFDA"];
+    br2 [label="Kafka brokers\n(Confluent managed)", fillcolor="#E2EFDA"];
+  } 
+  subgraph cluster_z3 { label="Availability zone 3"; style="rounded"; color="#595959"; fontsize=10;
+    w3 [label="Web pod", fillcolor="#DCE6F2"];
+    b3 [label="Batch pod", fillcolor="#DCE6F2"];
+    s3 [label="SRS pod", fillcolor="#E4DFEC"];
+    pe3 [label="Confluent private\nendpoint (zonal)", fillcolor="#F2F2F2"];
+    om3 [label="OpenSearch\ncluster-manager", fillcolor="#E2EFDA"];
+    od3 [label="OpenSearch\ndata node", fillcolor="#E2EFDA"];
+    br3 [label="Kafka brokers\n(Confluent managed)", fillcolor="#E2EFDA"];
+  }
+  db [label="Pega database\nzone-redundant high availability", shape=cylinder, style=filled, fillcolor="#F2F2F2"];
+  kv [label="Key Vault\n(regional, zone-resilient)", fillcolor="#FCE4D6"];
+  agw -> w1; agw -> w2; agw -> w3;
+  w1 -> b1 [style=invis]; w2 -> b2 [style=invis]; w3 -> b3 [style=invis];
+  b1 -> s1 [style=invis]; b2 -> s2 [style=invis]; b3 -> s3 [style=invis];
+  s1 -> pe1 [style=invis]; s2 -> pe2 [style=invis]; s3 -> pe3 [style=invis];
+  pe1 -> br1; pe2 -> br2; pe3 -> br3;
+  br1 -> om1 [style=invis]; br2 -> om2 [style=invis]; br3 -> om3 [style=invis];
+  om1 -> od1 [style=invis]; om2 -> od2 [style=invis]; om3 -> od3 [style=invis];
+  od1 -> db [style=invis]; od2 -> db [style=invis]; od3 -> kv [style=invis];
+  fw -> agw [style=invis];
+  note [shape=note, fillcolor="white", fontsize=9, label="Rule: losing any one zone leaves enough Pega pods,\nSRS pods, OpenSearch replicas and Kafka replicas\nto carry peak load. Node pools are sized at 1.5 times\npeak so two zones hold the full load."];
+  { rank=same; agw; fw; note; }
+
+}
