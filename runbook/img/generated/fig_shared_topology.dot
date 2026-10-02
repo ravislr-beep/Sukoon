@@ -1,0 +1,29 @@
+digraph G {
+
+  graph [fontname="Liberation Sans", fontsize=11, bgcolor="white", pad="0.3", nodesep="0.35", ranksep="0.45", fontcolor="#1F3864"];
+  node  [fontname="Liberation Sans", fontsize=10, shape=box, style="rounded,filled", fillcolor="white", color="#44546A", penwidth=1.1, margin="0.14,0.07"];
+  edge  [fontname="Liberation Sans", fontsize=9, color="#44546A", fontcolor="#595959", arrowsize=0.7, penwidth=1.0];
+
+
+  rankdir=LR; nodesep=0.25; ranksep=0.9; newrank=true;
+  subgraph cluster_np1 { label="Shared group NP1 (functional)"; style="dashed,rounded"; color="#595959"; fontsize=10;
+    dev [label="DEV namespace pega-dev\nprefix pega-dev-  |  sa-pega-dev\ncustomerDeploymentId pega26-dev\nSRS srs-dev  |  Okta client pega-srs-dev", fillcolor="#DCE6F2"]; sit [label="SIT namespace pega-sit\nprefix pega-sit-  |  sa-pega-sit\ncustomerDeploymentId pega26-sit\nSRS srs-sit  |  Okta client pega-srs-sit", fillcolor="#DCE6F2"]; uat [label="UAT namespace pega-uat\nprefix pega-uat-  |  sa-pega-uat\ncustomerDeploymentId pega26-uat\nSRS srs-uat  |  Okta client pega-srs-uat", fillcolor="#DCE6F2"];
+  }
+  subgraph cluster_np1s { label="NP1 services"; style="rounded"; color="#595959"; fontsize=10;
+    k1 [label="Confluent cluster cc-np1\nprefixed ACLs per service account\nclient quota per service account", fillcolor="#E2EFDA"];
+    o1 [label="OpenSearch os-np1\none SRS user and role per environment\nindex pattern pega26-<env>*", fillcolor="#E2EFDA"];
+  }
+  subgraph cluster_np2 { label="Shared group NP2 (production-like)"; style="dashed,rounded"; color="#595959"; fontsize=10;
+    perf [label="PERF namespace pega-perf\nprefix pega-perf-  |  sa-pega-perf\ncustomerDeploymentId pega26-perf\nSRS srs-perf  |  Okta client pega-srs-perf", fillcolor="#DCE6F2"]; ppd [label="PREPROD namespace pega-ppd\nprefix pega-ppd-  |  sa-pega-ppd\ncustomerDeploymentId pega26-ppd\nSRS srs-ppd  |  Okta client pega-srs-ppd", fillcolor="#DCE6F2"];
+  }
+  subgraph cluster_np2s { label="NP2 services (same type and settings as PROD)"; style="rounded"; color="#595959"; fontsize=10;
+    k2 [label="Confluent cluster cc-np2", fillcolor="#E2EFDA"];
+    o2 [label="OpenSearch os-np2", fillcolor="#E2EFDA"];
+  }
+  dev -> k1; sit -> k1; uat -> k1;
+  dev -> o1 [style=dashed]; sit -> o1 [style=dashed]; uat -> o1 [style=dashed];
+  perf -> k2; ppd -> k2;
+  perf -> o2 [style=dashed]; ppd -> o2 [style=dashed];
+  note [shape=note, fillcolor="white", fontsize=9, label="Solid: Kafka (SASL_SSL, Private Link)\nDashed: SRS to OpenSearch (TLS, private endpoint)\nEach environment has its own Key Vault secrets"];
+
+}

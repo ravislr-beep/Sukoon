@@ -6,25 +6,21 @@ digraph G {
 
 
   rankdir=TB;
-  start [label="Select Confluent Cloud cluster type", fillcolor="#DCE6F2"];
-  q1 [shape=diamond, style="filled", fillcolor="#FFF2CC", label="Production or any\nenvironment holding\nreal data?", margin="0.04,0.04", fontsize=9.5];
-  q2 [shape=diamond, style="filled", fillcolor="#FFF2CC", label="Private networking\nrequired by security\npolicy?", margin="0.04,0.04", fontsize=9.5];
-  q3 [shape=diamond, style="filled", fillcolor="#FFF2CC", label="Need VNet peering, mTLS,\nor more than 32 eCKU?", margin="0.04,0.04", fontsize=9.5];
-  q4 [shape=diamond, style="filled", fillcolor="#FFF2CC", label="Partition need within\nlimit? (count after\nrehearsal)", margin="0.04,0.04", fontsize=9.5];
-  basic [label="Basic or Standard\n(non-production only)", fillcolor="#FFF2CC"];
-  std [label="Standard\n(public networking only)", fillcolor="#F8CBAD"];
-  ent [label="Enterprise\nPrivate Link (PrivateLink Attachment)", fillcolor="#E2EFDA"];
+  start [label="Select the Confluent Cloud cluster type", fillcolor="#DCE6F2"];
+  q1 [shape=diamond, style="filled", fillcolor="#FFF2CC", label="Holds cloned or masked\nproduction data?", margin="0.04,0.04", fontsize=9.5];
+  q2 [shape=diamond, style="filled", fillcolor="#FFF2CC", label="Need VNet peering, or more\nthan 32 eCKU with\nPrivate Link?", margin="0.04,0.04", fontsize=9.5];
+  q3 [shape=diamond, style="filled", fillcolor="#FFF2CC", label="Measured partitions and\nthroughput within\nEnterprise limits?", margin="0.04,0.04", fontsize=9.5];
+  basic [label="Basic or Standard\n(sandbox only, no cloned data)", fillcolor="#FFF2CC"];
+  ent [label="Enterprise\nPrivate Link", fillcolor="#E2EFDA"];
   ded [label="Dedicated\nPrivate Link or VNet peering", fillcolor="#E2EFDA"];
   frt [label="Freight: not suitable\n(no idempotent producer,\nno transactions)", fillcolor="#F8CBAD"];
   start -> q1;
   q1 -> basic [label="No"];
   q1 -> q2 [label="Yes"];
-  q2 -> std [label="No, but reference\ndesign requires it"];
-  q2 -> q3 [label="Yes"];
-  q3 -> ded [label="Yes"];
-  q3 -> q4 [label="No"];
-  q4 -> ent [label="Yes"];
-  q4 -> ded [label="No"];
+  q2 -> ded [label="Yes"];
+  q2 -> q3 [label="No"];
+  q3 -> ent [label="Yes"];
+  q3 -> ded [label="No"];
   start -> frt [style=dashed, arrowhead=none];
 
 }

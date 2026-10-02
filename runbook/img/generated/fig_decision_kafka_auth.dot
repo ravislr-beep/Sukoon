@@ -7,14 +7,14 @@ digraph G {
 
   rankdir=TB;
   start [label="Select Pega to Kafka authentication", fillcolor="#DCE6F2"];
-  q1 [shape=diamond, style="filled", fillcolor="#FFF2CC", label="Is a documented\nHelm path available for\nthe mechanism in 26.1.1?", margin="0.04,0.04", fontsize=9.5];
+  q1 [shape=diamond, style="filled", fillcolor="#FFF2CC", label="Documented Helm value\nfor the mechanism\n(stream.saslMechanism)?", margin="0.04,0.04", fontsize=9.5];
   q2 [shape=diamond, style="filled", fillcolor="#FFF2CC", label="Security policy forbids\nlong-lived API keys?", margin="0.04,0.04", fontsize=9.5];
-  q3 [shape=diamond, style="filled", fillcolor="#FFF2CC", label="OAUTHBEARER proven in\nPega 26.1.1 rehearsal\nwith Confluent?", margin="0.04,0.04", fontsize=9.5];
-  plain [label="SASL_SSL + PLAIN\nConfluent service-account API key\nin Key Vault, rotated by runbook\n(reference design)", fillcolor="#E2EFDA"];
-  oauth [label="SASL_SSL + OAUTHBEARER\nper Pega article for OAuthBearer", fillcolor="#E2EFDA"];
-  exc [label="Raise exception: use PLAIN with\nshort rotation interval until\nOAUTHBEARER is proven", fillcolor="#FFF2CC"];
+  q3 [shape=diamond, style="filled", fillcolor="#FFF2CC", label="OAUTHBEARER proven with\nConfluent in a 26.1.1\nrehearsal?", margin="0.04,0.04", fontsize=9.5];
+  plain [label="SASL_SSL + PLAIN\nservice-account API key in Key Vault,\nrotated by runbook (reference design)", fillcolor="#E2EFDA"];
+  oauth [label="SASL_SSL + OAUTHBEARER\nper the Pega article", fillcolor="#E2EFDA"];
+  exc [label="Exception: PLAIN with short\nrotation until OAUTHBEARER\nis proven", fillcolor="#FFF2CC"];
   start -> q1;
-  q1 -> q2 [label="PLAIN: yes\n(stream.saslMechanism)"];
+  q1 -> q2 [label="PLAIN: yes"];
   q2 -> plain [label="No"];
   q2 -> q3 [label="Yes"];
   q3 -> oauth [label="Yes"];

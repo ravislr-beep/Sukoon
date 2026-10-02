@@ -6,21 +6,19 @@ digraph G {
 
 
   rankdir=LR;
-  pega [label="Pega web and batch\nlogs, JVM, PDC alerts", fillcolor="#DCE6F2"];
-  srs [label="SRS pods\nlogs, latency, errors", fillcolor="#E4DFEC"];
+  pega [label="Pega web and batch\nlogs, alerts", fillcolor="#DCE6F2"];
+  srs [label="SRS pods\nlogs, errors", fillcolor="#E4DFEC"];
   aks [label="AKS nodes and pods\nContainer Insights", fillcolor="#F2F2F2"];
-  ccl [label="Confluent Cloud\nMetrics API, audit log topic", fillcolor="#E2EFDA"];
-  srch [label="Search service\nhealth, latency, disk, JVM", fillcolor="#E2EFDA"];
+  ccl [label="Confluent Cloud\nMetrics API by principal_id", fillcolor="#E2EFDA"];
+  srch [label="OpenSearch provider\nhealth, disk, JVM", fillcolor="#E2EFDA"];
   net [label="Synthetic checks\nDNS, TCP, TLS expiry", fillcolor="#F2F2F2"];
   law [label="Log Analytics workspace\nand Azure Monitor metrics", fillcolor="#F2F2F2"];
-  pdc [label="Pega Diagnostic Center", fillcolor="#DCE6F2"];
   siem [label="SIEM", fillcolor="#FCE4D6"];
-  dash [label="Platform dashboard\n(7 distinct health signals)", fillcolor="#E2EFDA"];
-  alert [label="Alert rules and on-call\nrouting (Section 18)", fillcolor="#E2EFDA"];
+  dash [label="Dashboard per environment\nand per shared group", fillcolor="#E2EFDA"];
+  alert [label="Alert rules and\non-call routing", fillcolor="#E2EFDA"];
   pega -> law; srs -> law; aks -> law; net -> law;
-  ccl -> law [label="exporter / connector"];
+  ccl -> law [label="exporter"];
   srch -> law [label="provider integration"];
-  pega -> pdc [style=dashed];
   law -> siem [label="security events"];
   law -> dash; law -> alert;
 

@@ -21,6 +21,7 @@ SEC = "#FCE4D6"       # identity and secrets
 DEC = "#FFF2CC"       # decision diamonds
 OK = "#E2EFDA"
 STOP = "#F8CBAD"
+OLD = "#EDEDED"       # 8.8 estate
 
 BASE = f'''
   graph [fontname="{FONT}", fontsize=11, bgcolor="white", pad="0.3", nodesep="0.35", ranksep="0.45", fontcolor="{NAVY}"];
@@ -36,48 +37,34 @@ def render(name, body, engine="dot"):
     print("rendered", name)
 
 
-def cluster(cid, label, inner, style="dashed", color=GREY, fill="white"):
-    return f'''
-  subgraph cluster_{cid} {{
-    label="{label}"; labeljust="l"; style="{style},rounded"; color="{color}"; fillcolor="{fill}"; fontsize=10; margin=12;
-    {inner}
-  }}'''
-
-
 def decision(nid, text):
     return f'{nid} [shape=diamond, style="filled", fillcolor="{DEC}", label="{text}", margin="0.04,0.04", fontsize=9.5];'
-
-
-def outcome(nid, text, fill=OK):
-    return f'{nid} [shape=box, style="rounded,filled", fillcolor="{fill}", label="{text}"];'
 
 
 def logical_flows():
     body = f'''
   rankdir=TB; nodesep=0.5; ranksep=0.55;
   u [label="User", shape=box, style="rounded"];
-  ing [label="Ingress", fillcolor="{AZ}"];
+  ing [label="Application Gateway\\nand ingress", fillcolor="{AZ}"];
   web [label="Pega web tier", fillcolor="{PEGA}"];
   bat [label="Pega batch tier", fillcolor="{PEGA}"];
-  db [label="Database", shape=cylinder, style=filled, fillcolor="{AZ}"];
-  k [label="Confluent Cloud\\ntopics (pega- prefix)", fillcolor="{EXT}"];
-  srs [label="SRS", fillcolor="{BACK}"];
-  os [label="Search cluster", fillcolor="{EXT}"];
-  ops [label="Platform team", shape=box, style="rounded"];
-  ctl [label="AKS API, Confluent console,\\nsearch console (private)", fillcolor="{AZ}"];
+  db [label="Upgraded clone of the\\n8.8 database", shape=cylinder, style=filled, fillcolor="{AZ}"];
+  k [label="Confluent Cloud\\ntopics pega-<env>-*", fillcolor="{EXT}"];
+  srs [label="SRS (one per environment)", fillcolor="{BACK}"];
+  os [label="Managed OpenSearch\\nindexes pega26-<env>*", fillcolor="{EXT}"];
+  okta [label="Okta custom\\nauthorization server", fillcolor="{SEC}"];
   mon [label="Azure Monitor and SIEM", fillcolor="{AZ}"];
   u -> ing -> web [label="1 request", color="{NAVY}", fontcolor="{NAVY}", penwidth=1.6];
   web -> db [label="1 rules and case data", color="{NAVY}", fontcolor="{NAVY}", penwidth=1.6];
   web -> k [label="2 queue processor\\nmessages", color="#C55A11", fontcolor="#C55A11", penwidth=1.6];
   k -> bat [label="2 consume", color="#C55A11", fontcolor="#C55A11", penwidth=1.6];
-  bat -> srs [label="3 index (incremental\\nindexer queue processor)", color="#7030A0", fontcolor="#7030A0", penwidth=1.6];
+  bat -> srs [label="3 index", color="#7030A0", fontcolor="#7030A0", penwidth=1.6];
   web -> srs [label="3 search query", color="#7030A0", fontcolor="#7030A0"];
   srs -> os [label="3 store and query", color="#7030A0", fontcolor="#7030A0", penwidth=1.6];
-  ops -> ctl [label="4 administration", style=dashed];
+  web -> okta [label="4 token", style=dashed];
+  srs -> okta [label="4 signing keys", style=dashed];
   web -> mon [label="5 telemetry", style=dotted];
-  srs -> mon [style=dotted];
-  k -> mon [style=dotted];
-  os -> mon [style=dotted];
+  srs -> mon [style=dotted]; k -> mon [style=dotted]; os -> mon [style=dotted];
 '''
     render("fig_logical_flows", body)
 
@@ -90,7 +77,7 @@ def connectivity_chain():
         ("TCP connect", "port 9092 or 443\\nreachable"),
         ("TLS handshake", "TLS 1.2+, SNI\\nmatches host"),
         ("Certificate", "chain trusted by\\nclient truststore"),
-        ("Authentication", "SASL / OAuth / basic\\nor client certificate"),
+        ("Authentication", "SASL, OAuth token\\nor basic"),
         ("Authorization", "ACL or role allows\\nthe operation"),
         ("Operation", "produce, consume,\\nindex, search"),
     ]
@@ -108,93 +95,280 @@ def connectivity_chain():
   {{rank=same; s2; s7}}
   {{rank=same; s3; s8}}
   note [shape=note, style=filled, fillcolor="white", color="{GREY}", fontsize=9,
-        label="Work through the steps in order.\\nA failure at one step makes\\nevery later step fail.\\nRecord evidence (Appendix C)."];
+        label="Work through the steps in order.\\nA failure at one step makes\\nevery later step fail.\\nKeep the evidence (Appendix D)."];
   {{rank=same; s4; note}}
   s0 -> s5 [style=invis];
 '''
     render("fig_connectivity_chain", body)
 
 
-def srs_auth_flow():
+def okta_token_flow():
     body = f'''
-  rankdir=LR;
-  pega [label="Pega node\\n(web or batch)", fillcolor="{PEGA}"];
-  idp [label="OAuth identity provider\\ntoken endpoint", fillcolor="{SEC}"];
-  srs [label="SRS\\nAuthEnabled: true", fillcolor="{BACK}"];
-  jwks [label="Public key URL\\n(OAuthPublicKeyURL)", fillcolor="{SEC}"];
-  os [label="Elasticsearch / OpenSearch\\nindexes prefixed with\\ncustomerDeploymentId", fillcolor="{EXT}"];
-  pega -> idp [label="1 client credentials\\n(private_key_jwt or client_secret_basic)\\nscope pega.search:full"];
-  idp -> pega [label="2 JWT with scp and guid claims", style=dashed];
-  pega -> srs [label="3 request + bearer token"];
-  srs -> jwks [label="4 fetch signing keys", style=dashed];
-  srs -> os [label="5 TLS + basic auth, mTLS\\nor PKI client certificate"];
+  rankdir=LR; nodesep=0.5;
+  pega [label="Pega node\\n(web or batch)\\nclientId pega-srs-<env>", fillcolor="{PEGA}"];
+  okta [label="Okta custom authorization server\\n/oauth2/<server-id>/v1/token\\nscope pega.search:full\\nclaim guid = pega26-<env>", fillcolor="{SEC}"];
+  jwks [label="Okta key set\\njwks_uri from the\\ndiscovery document", fillcolor="{SEC}"];
+  srs [label="SRS for <env>\\nAuthEnabled true\\nOAuthPublicKeyURL", fillcolor="{BACK}"];
+  chk [label="SRS checks\\n1 signature (key set)\\n2 guid equals\\n   customerDeploymentId", shape=note, fillcolor="white"];
+  os [label="Managed OpenSearch\\nindexes pega26-<env>*", fillcolor="{EXT}"];
+  pega -> okta [label="1 client credentials grant\\nprivate_key_jwt (RS256),\\nkey from Key Vault"];
+  okta -> pega [label="2 access token (JWT)", style=dashed];
+  pega -> srs [label="3 request with\\nbearer token"];
+  srs -> jwks [label="4 fetch signing keys\\n(through egress firewall)", style=dashed];
+  srs -> chk [style=dotted, arrowhead=none];
+  srs -> os [label="5 TLS + SRS user\\n(index-scoped role)"];
 '''
-    render("fig_srs_auth_flow", body)
+    render("fig_okta_token_flow", body)
 
 
 def secrets_flow():
     body = f'''
   rankdir=LR;
-  kv [label="Azure Key Vault\\nsecrets and certificates", fillcolor="{SEC}"];
+  kv [label="Azure Key Vault\\none vault per environment", fillcolor="{SEC}"];
   eso [label="External Secrets Operator\\n(workload identity)", fillcolor="{SEC}"];
-  ks [label="Kubernetes secrets\\n(etcd encrypted with KMS)", fillcolor="{AZ}"];
-  pega [label="Pega pods\\njdbc.external_secret_name\\nstream.external_secret_name\\nglobal.certificatesSecrets", fillcolor="{PEGA}"];
-  srs [label="SRS pods\\nsrsStorage.authSecret\\nsrsStorage.certsSecret", fillcolor="{BACK}"];
-  kv -> eso [label="read (RBAC: Key Vault Secrets User)"];
-  eso -> ks [label="sync on refreshInterval"];
-  ks -> pega; ks -> srs;
+  ks [label="Kubernetes secrets\\nin pega-<env> and srs-<env>", fillcolor="{AZ}"];
+  pega [label="Pega web and batch pods\\njdbc.external_secret_name\\nstream.external_secret_name\\npegasearch.srsAuth.external_secret_name", fillcolor="{PEGA}"];
+  inst [label="Installer job\\njdbc.external_secret_name", fillcolor="{PEGA}"];
+  srs [label="SRS pods\\nsrsStorage.authSecret\\nsrsRuntime.ssl.certsSecret", fillcolor="{BACK}"];
+  kv -> eso [label="read (Key Vault\\nSecrets User role)"];
+  eso -> ks [label="sync on\\nrefreshInterval"];
+  ks -> pega; ks -> inst; ks -> srs;
 '''
     render("fig_secrets_flow", body)
 
 
-def decision_search_backend():
+def clone_upgrade_flow():
+    body = f'''
+  rankdir=TB; nodesep=0.3; ranksep=0.32;
+  subgraph cluster_old {{ label="Pega 8.8 estate (unchanged)"; style="dashed,rounded"; color="{GREY}"; fontsize=10;
+    p88 [label="Pega 8.8 production\\nembedded Kafka, embedded Elasticsearch", fillcolor="{OLD}"];
+    db88 [label="8.8 production database", shape=cylinder, style=filled, fillcolor="{OLD}"];
+    p88 -> db88 [arrowhead=none];
+  }}
+  clone [label="1 Clone the database\\n(production: final clone after 8.8 is stopped)", fillcolor="{AZ}"];
+  {decision("np", "Non-production\\nenvironment?")}
+  mask [label="2 Mask personal data\\n(customer masking policy)", fillcolor="{SEC}"];
+  upg [label="3 Installer job: action upgrade\\nupgradeType per Pega Support (GQ-04)", fillcolor="{PEGA}"];
+  clean [label="4 Clean-up and checks of cloned\\nKafka and search items (Section 10.3)", fillcolor="{DEC}"];
+  dep [label="5 Deploy 26.1.1 tiers: own prefix,\\nservice account, customerDeploymentId\\nbatch tier at zero, intake held", fillcolor="{PEGA}"];
+  chk [label="6 Stream and search landing pages,\\nqueue processors, cloned items", fillcolor="{DEC}"];
+  idx [label="7 Scale batch tier; full index build\\nthrough SRS into OpenSearch", fillcolor="{BACK}"];
+  rel [label="8 Release intake", fillcolor="{OK}"];
+  db88 -> clone;
+  clone -> np;
+  np -> mask [label="Yes"];
+  np -> upg [label="No (PROD)"];
+  mask -> upg -> clean -> dep -> chk -> idx -> rel;
+'''
+    render("fig_clone_upgrade_flow", body)
+
+
+def cutover_timeline():
+    steps = [
+        ("C-1", "Hold intake on 8.8\\nusers, listeners,\\nschedulers", OLD),
+        ("C-2", "Drain queues\\nrecord zero counts\\nand broken items", OLD),
+        ("C-3", "Stop 8.8\\nfinal clone", AZ),
+        ("C-4", "Upgrade clone\\ninstaller job", PEGA),
+        ("C-5", "Clean-up\\nand checks", DEC),
+        ("C-6", "First start\\nintake held", PEGA),
+        ("C-7", "Full index build\\ncount checks", BACK),
+        ("C-8", "Application Kafka\\ndata sets cutover", EXT),
+        ("C-9", "Smoke tests\\nGo/No-Go 2", DEC),
+        ("C-10", "DNS switch\\nrelease intake", OK),
+    ]
+    nodes = " ".join(f'{s.replace("-", "")} [label="{s}\\n{t}", fillcolor="{c}", width=1.35];' for s, t, c in steps)
+    ids = [s.replace("-", "") for s, _, _ in steps]
+    body = f'''
+  rankdir=TB; nodesep=0.3; ranksep=0.45; newrank=true;
+  {nodes}
+  {{rank=same; {"; ".join(ids[:5])}}}
+  {{rank=same; {"; ".join(ids[5:])}}}
+  {" -> ".join(ids[:5])};
+  {" -> ".join(ids[5:])};
+  C5 -> C6;
+  rb [label="Rollback without loss of 26.1.1 work:\\nrestart 8.8 on its untouched database,\\nwith its embedded Kafka and Elasticsearch", fillcolor="{STOP}"];
+  pnr [label="After C-10, rollback loses work done\\non 26.1.1 (business decision)", fillcolor="{STOP}"];
+  C9 -> rb [style=dashed, label="any step\\nup to C-9"];
+  C10 -> pnr [style=dashed];
+'''
+    render("fig_cutover_timeline", body)
+
+
+def shared_topology():
+    def envbox(code, name):
+        return (f'{code} [label="{name} namespace pega-{code}\\nprefix pega-{code}-  |  sa-pega-{code}\\n'
+                f'customerDeploymentId pega26-{code}\\nSRS srs-{code}  |  Okta client pega-srs-{code}", fillcolor="{PEGA}"];')
+    body = f'''
+  rankdir=LR; nodesep=0.25; ranksep=0.9; newrank=true;
+  subgraph cluster_np1 {{ label="Shared group NP1 (functional)"; style="dashed,rounded"; color="{GREY}"; fontsize=10;
+    {envbox("dev", "DEV")} {envbox("sit", "SIT")} {envbox("uat", "UAT")}
+  }}
+  subgraph cluster_np1s {{ label="NP1 services"; style="rounded"; color="{GREY}"; fontsize=10;
+    k1 [label="Confluent cluster cc-np1\\nprefixed ACLs per service account\\nclient quota per service account", fillcolor="{EXT}"];
+    o1 [label="OpenSearch os-np1\\none SRS user and role per environment\\nindex pattern pega26-<env>*", fillcolor="{EXT}"];
+  }}
+  subgraph cluster_np2 {{ label="Shared group NP2 (production-like)"; style="dashed,rounded"; color="{GREY}"; fontsize=10;
+    {envbox("perf", "PERF")} {envbox("ppd", "PREPROD")}
+  }}
+  subgraph cluster_np2s {{ label="NP2 services (same type and settings as PROD)"; style="rounded"; color="{GREY}"; fontsize=10;
+    k2 [label="Confluent cluster cc-np2", fillcolor="{EXT}"];
+    o2 [label="OpenSearch os-np2", fillcolor="{EXT}"];
+  }}
+  dev -> k1; sit -> k1; uat -> k1;
+  dev -> o1 [style=dashed]; sit -> o1 [style=dashed]; uat -> o1 [style=dashed];
+  perf -> k2; ppd -> k2;
+  perf -> o2 [style=dashed]; ppd -> o2 [style=dashed];
+  note [shape=note, fillcolor="white", fontsize=9, label="Solid: Kafka (SASL_SSL, Private Link)\\nDashed: SRS to OpenSearch (TLS, private endpoint)\\nEach environment has its own Key Vault secrets"];
+'''
+    render("fig_shared_topology", body)
+
+
+def prod_topology():
+    body = f'''
+  rankdir=LR; nodesep=0.35; ranksep=0.7;
+  subgraph cluster_aks {{ label="Production AKS cluster"; style="dashed,rounded"; color="{GREY}"; fontsize=10;
+    web [label="Web tier\\n(WebUser)", fillcolor="{PEGA}"];
+    bat [label="Batch tier\\n(BackgroundProcessing,\\nSearch, Batch, RealTime ...)", fillcolor="{PEGA}"];
+    srs [label="SRS srs-prd\\n3 replicas, network policy", fillcolor="{BACK}"];
+    eso [label="External Secrets\\nOperator", fillcolor="{SEC}"];
+  }}
+  k [label="Confluent cluster cc-prd\\n(dedicated to PROD)\\nprefix pega-prd-, sa-pega-prd", fillcolor="{EXT}"];
+  o [label="OpenSearch os-prd\\n(dedicated to PROD)\\n3 cluster-manager, 3+ data nodes", fillcolor="{EXT}"];
+  okta [label="Okta custom authorization\\nserver for PROD only", fillcolor="{SEC}"];
+  kv [label="Key Vault kv-pega-prd", fillcolor="{SEC}"];
+  db [label="Upgraded final clone\\n(PROD database)", shape=cylinder, style=filled, fillcolor="{AZ}"];
+  web -> k; bat -> k;
+  web -> srs; bat -> srs;
+  srs -> o;
+  web -> okta [style=dashed]; srs -> okta [style=dashed, label="key set"];
+  kv -> eso [style=dotted];
+  web -> db; bat -> db;
+'''
+    render("fig_prod_topology", body)
+
+
+def network_dns_flow():
+    body = f'''
+  rankdir=LR; nodesep=0.3; ranksep=0.55;
+  pod [label="Pega or SRS pod", fillcolor="{PEGA}"];
+  core [label="CoreDNS\\n(AKS)", fillcolor="{AZ}"];
+  res [label="Hub DNS resolver\\nor Azure DNS", fillcolor="{AZ}"];
+  z1 [label="Private DNS zone for the\\nConfluent network domain\\nwildcard and zonal records", fillcolor="{AZ}"];
+  z2 [label="Private DNS zone for the\\nOpenSearch provider endpoint", fillcolor="{AZ}"];
+  pe1 [label="Private endpoints (one per zone)\\nto Confluent Private Link service", fillcolor="{EXT}"];
+  pe2 [label="Private endpoint to the\\nOpenSearch provider", fillcolor="{EXT}"];
+  fw [label="Hub firewall\\negress allow-list", fillcolor="{STOP}"];
+  okta [label="Okta (public SaaS)\\n<okta-domain>:443", fillcolor="{SEC}"];
+  pod -> core -> res;
+  res -> z1 [label="bootstrap and\\nbroker names"];
+  res -> z2 [label="search host"];
+  pod -> pe1 [label="9092 SASL_SSL", color="#C55A11", fontcolor="#C55A11"];
+  pod -> pe2 [label="443 HTTPS", color="#7030A0", fontcolor="#7030A0"];
+  pod -> fw [label="443 token and key set"];
+  fw -> okta;
+'''
+    render("fig_network_dns", body)
+
+
+def message_path():
+    body = f'''
+  rankdir=LR; nodesep=0.3; ranksep=0.55;
+  prod [label="Producer on any tier\\n(queue-for-processing step,\\njob scheduler, Pega service)", fillcolor="{PEGA}"];
+  qp [label="Queue processor rule\\n(stream name)", fillcolor="{PEGA}"];
+  topic [label="Topic pega-<env>-<stream name>\\npartitions 0..n\\nreplication factor 3", fillcolor="{EXT}"];
+  cg [label="Consumer group\\nunder prefix pega-<env>-", fillcolor="{EXT}"];
+  bat [label="Batch tier pods\\none partition is read by\\none consumer at a time", fillcolor="{PEGA}"];
+  db [label="Database\\n(delayed and broken\\nitems, case data)", shape=cylinder, style=filled, fillcolor="{AZ}"];
+  prod -> qp [label="queue item"];
+  qp -> topic [label="produce\\n(idempotent, transactional)"];
+  topic -> cg [arrowhead=none];
+  cg -> bat [label="consume"];
+  bat -> db [label="process; failed items\\nbecome broken items"];
+  prod -> db [style=dashed, label="delayed items wait in\\nthe database until due"];
+'''
+    render("fig_message_path", body)
+
+
+def decision_env_grouping():
     body = f'''
   rankdir=TB;
-  start [label="Select search backend for SRS", shape=box, style="rounded,filled", fillcolor="{PEGA}"];
-  {decision("q1", "Does Customer policy\\nallow Elasticsearch\\n(Elastic licence)?")}
-  {decision("q2", "Is a managed OpenSearch\\nservice available in the\\nAzure region with private\\nconnectivity?")}
-  {decision("q3", "Does the provider allow\\nauto_create_index=false and\\ndestructive_requires_name=false?")}
-  {decision("q4", "Does the provider support an\\nSRS auth method: basic, TLS,\\nmTLS or PKI?")}
-  es [label="Elasticsearch 8.x from the\\ncertified list\\nimage: search-n-reporting-service", fillcolor="{OK}"];
-  os [label="Managed OpenSearch 2.19 or 2.15\\nimage: search-n-reporting-service-os", fillcolor="{OK}"];
-  self [label="Self-managed OpenSearch\\n(official images only) on a\\ndedicated node pool; Customer\\noperates it", fillcolor="{DEC}"];
-  reject [label="Reject provider\\nand re-evaluate", fillcolor="{STOP}"];
+  start [label="Place a non-production environment on shared services", fillcolor="{PEGA}"];
+  {decision("q1", "Does it run load tests\\nor production rehearsals?")}
+  {decision("q2", "Must it match PROD service\\ntype, settings and\\nnetworking?")}
+  {decision("q3", "Can its schedule avoid\\noverlap with the other\\nproduction-like environment?")}
+  np1 [label="Shared group NP1\\n(DEV, SIT, UAT)", fillcolor="{OK}"];
+  np2 [label="Shared group NP2\\n(PERF, PREPROD)", fillcolor="{OK}"];
+  own [label="Own service set\\n(extra cost, logged as a decision)", fillcolor="{DEC}"];
   start -> q1;
-  q1 -> es [label="Yes"];
-  q1 -> q2 [label="No (current\\nbaseline D-08)"];
+  q1 -> np1 [label="No"];
+  q1 -> q2 [label="Yes"];
+  q2 -> np1 [label="No"];
   q2 -> q3 [label="Yes"];
-  q2 -> self [label="No"];
-  q3 -> q4 [label="Yes"];
-  q3 -> reject [label="No"];
-  q4 -> os [label="Yes"];
-  q4 -> reject [label="No"];
-  es -> q3 [style=dashed, label="same checks apply"];
+  q3 -> np2 [label="Yes"];
+  q3 -> own [label="No"];
 '''
-    render("fig_decision_search_backend", body)
+    render("fig_decision_env_grouping", body)
+
+
+def decision_srs():
+    body = f'''
+  rankdir=TB;
+  start [label="One SRS per environment, or one shared SRS?", fillcolor="{PEGA}"];
+  {decision("q1", "Is the environment PROD?")}
+  {decision("q2", "Must SRS upgrades and\\nrestarts be planned per\\nenvironment?")}
+  {decision("q3", "Must each environment use\\nits own OpenSearch user\\nand index-scoped role?")}
+  per [label="RECOMMENDED: SRS per environment\\nin namespace srs-<env>\\nown OpenSearch user, own key set URL", fillcolor="{OK}"];
+  shared [label="Shared SRS for the group\\nisolation by customerDeploymentId only;\\none OpenSearch user for all", fillcolor="{DEC}"];
+  start -> q1;
+  q1 -> per [label="Yes"];
+  q1 -> q2 [label="No"];
+  q2 -> per [label="Yes"];
+  q2 -> q3 [label="No"];
+  q3 -> per [label="Yes"];
+  q3 -> shared [label="No"];
+'''
+    render("fig_decision_srs", body)
+
+
+def decision_search_provider():
+    body = f'''
+  rankdir=TB;
+  start [label="Select the managed OpenSearch provider", fillcolor="{PEGA}"];
+  {decision("q1", "Provider documentation shows\\nan Azure region and OpenSearch\\n2.15 or 2.19 (SRS matrix)?")}
+  {decision("q2", "Private connectivity from\\nthe customer VNet\\n(private endpoint)?")}
+  {decision("q3", "Can the customer set\\nauto_create_index and\\ndestructive_requires_name?")}
+  {decision("q4", "Fine-grained roles with\\nindex patterns, snapshots,\\nsupport terms accepted?")}
+  ok [label="Candidate: score as in Section 7.3\\nimage search-n-reporting-service-os", fillcolor="{OK}"];
+  self [label="Fallback: self-managed OpenSearch\\n(official images) on a dedicated\\nAKS node pool; customer operates it", fillcolor="{DEC}"];
+  reject [label="Reject the provider", fillcolor="{STOP}"];
+  start -> q1;
+  q1 -> q2 [label="Yes"]; q1 -> reject [label="No"];
+  q2 -> q3 [label="Yes"]; q2 -> reject [label="No"];
+  q3 -> q4 [label="Yes"]; q3 -> reject [label="No"];
+  q4 -> ok [label="Yes"]; q4 -> reject [label="No"];
+  reject -> self [style=dashed, label="no provider passes"];
+'''
+    render("fig_decision_search_provider", body)
 
 
 def decision_confluent():
     body = f'''
   rankdir=TB;
-  start [label="Select Confluent Cloud cluster type", fillcolor="{PEGA}"];
-  {decision("q1", "Production or any\\nenvironment holding\\nreal data?")}
-  {decision("q2", "Private networking\\nrequired by security\\npolicy?")}
-  {decision("q3", "Need VNet peering, mTLS,\\nor more than 32 eCKU?")}
-  {decision("q4", "Partition need within\\nlimit? (count after\\nrehearsal)")}
-  basic [label="Basic or Standard\\n(non-production only)", fillcolor="{DEC}"];
-  std [label="Standard\\n(public networking only)", fillcolor="{STOP}"];
-  ent [label="Enterprise\\nPrivate Link (PrivateLink Attachment)", fillcolor="{OK}"];
+  start [label="Select the Confluent Cloud cluster type", fillcolor="{PEGA}"];
+  {decision("q1", "Holds cloned or masked\\nproduction data?")}
+  {decision("q2", "Need VNet peering, or more\\nthan 32 eCKU with\\nPrivate Link?")}
+  {decision("q3", "Measured partitions and\\nthroughput within\\nEnterprise limits?")}
+  basic [label="Basic or Standard\\n(sandbox only, no cloned data)", fillcolor="{DEC}"];
+  ent [label="Enterprise\\nPrivate Link", fillcolor="{OK}"];
   ded [label="Dedicated\\nPrivate Link or VNet peering", fillcolor="{OK}"];
   frt [label="Freight: not suitable\\n(no idempotent producer,\\nno transactions)", fillcolor="{STOP}"];
   start -> q1;
   q1 -> basic [label="No"];
   q1 -> q2 [label="Yes"];
-  q2 -> std [label="No, but reference\\ndesign requires it"];
-  q2 -> q3 [label="Yes"];
-  q3 -> ded [label="Yes"];
-  q3 -> q4 [label="No"];
-  q4 -> ent [label="Yes"];
-  q4 -> ded [label="No"];
+  q2 -> ded [label="Yes"];
+  q2 -> q3 [label="No"];
+  q3 -> ent [label="Yes"];
+  q3 -> ded [label="No"];
   start -> frt [style=dashed, arrowhead=none];
 '''
     render("fig_decision_confluent", body)
@@ -204,14 +378,14 @@ def decision_kafka_auth():
     body = f'''
   rankdir=TB;
   start [label="Select Pega to Kafka authentication", fillcolor="{PEGA}"];
-  {decision("q1", "Is a documented\\nHelm path available for\\nthe mechanism in 26.1.1?")}
+  {decision("q1", "Documented Helm value\\nfor the mechanism\\n(stream.saslMechanism)?")}
   {decision("q2", "Security policy forbids\\nlong-lived API keys?")}
-  {decision("q3", "OAUTHBEARER proven in\\nPega 26.1.1 rehearsal\\nwith Confluent?")}
-  plain [label="SASL_SSL + PLAIN\\nConfluent service-account API key\\nin Key Vault, rotated by runbook\\n(reference design)", fillcolor="{OK}"];
-  oauth [label="SASL_SSL + OAUTHBEARER\\nper Pega article for OAuthBearer", fillcolor="{OK}"];
-  exc [label="Raise exception: use PLAIN with\\nshort rotation interval until\\nOAUTHBEARER is proven", fillcolor="{DEC}"];
+  {decision("q3", "OAUTHBEARER proven with\\nConfluent in a 26.1.1\\nrehearsal?")}
+  plain [label="SASL_SSL + PLAIN\\nservice-account API key in Key Vault,\\nrotated by runbook (reference design)", fillcolor="{OK}"];
+  oauth [label="SASL_SSL + OAUTHBEARER\\nper the Pega article", fillcolor="{OK}"];
+  exc [label="Exception: PLAIN with short\\nrotation until OAUTHBEARER\\nis proven", fillcolor="{DEC}"];
   start -> q1;
-  q1 -> q2 [label="PLAIN: yes\\n(stream.saslMechanism)"];
+  q1 -> q2 [label="PLAIN: yes"];
   q2 -> plain [label="No"];
   q2 -> q3 [label="Yes"];
   q3 -> oauth [label="Yes"];
@@ -220,226 +394,113 @@ def decision_kafka_auth():
     render("fig_decision_kafka_auth", body)
 
 
-def decision_source_path():
+def decision_cloned_item():
     body = f'''
   rankdir=TB;
-  start [label="Assess the Pega 8.8 source estate", fillcolor="{PEGA}"];
-  {decision("q1", "Source runs on\\nVMs or on\\nKubernetes?")}
-  {decision("q2", "Stream: embedded\\nstream nodes or\\nexternal Kafka?")}
-  {decision("q3", "Search: embedded,\\nlegacy plug-in\\nor SRS?")}
-  vm [label="Side-by-side move to the new\\nAKS platform (VMs are not\\nsupported from \'25)", fillcolor="{OK}"];
-  k8s [label="Side-by-side is still preferred\\nbecause the target is a new\\nAKS cluster and Confluent", fillcolor="{OK}"];
-  s1 [label="Drain embedded stream with the\\nStream Migration activity (8.7+),\\nswitch to Confluent (Release 1)", fillcolor="{DEC}"];
-  s2 [label="Drain external Kafka queues;\\nswitch provider to Confluent\\n(Release 1)", fillcolor="{DEC}"];
-  r1 [label="Full index build through SRS\\n(Section 12)", fillcolor="{DEC}"];
+  start [label="Item found in the cloned database (Section 10.3)", fillcolor="{PEGA}"];
+  {decision("q1", "Does it point to a Kafka,\\nsearch or other endpoint\\noutside this environment?")}
+  {decision("q2", "Does Pega 26.1.1 replace\\nit with Helm or SRS\\nconfiguration?")}
+  {decision("q3", "Does Pega document\\nit as removed in\\n'25 or '26?")}
+  {decision("q4", "Is it business work\\n(queue item, case,\\nscheduled run)?")}
+  rep [label="CHANGE: repoint or disable\\nbefore the batch tier starts", fillcolor="{STOP}"];
+  chk [label="CHECK after first start:\\nlanding page shows the Helm value;\\nraise with Pega Support if not", fillcolor="{DEC}"];
+  del [label="DELETE with the Pega-documented\\nmethod (for example PEGA0179 DSS)", fillcolor="{DEC}"];
+  biz [label="DECIDE per kind with the business:\\nresolve on 8.8, reprocess on 26.1.1,\\nor discard (non-production)", fillcolor="{DEC}"];
+  keep [label="KEEP", fillcolor="{OK}"];
   start -> q1;
-  q1 -> vm [label="VMs"];
-  q1 -> k8s [label="Kubernetes"];
-  vm -> q2; k8s -> q2;
-  q2 -> s1 [label="Embedded"];
-  q2 -> s2 [label="External"];
-  s1 -> q3; s2 -> q3;
-  q3 -> r1 [label="Any of the three"];
+  q1 -> rep [label="Yes"]; q1 -> q2 [label="No"];
+  q2 -> chk [label="Yes"]; q2 -> q3 [label="No"];
+  q3 -> del [label="Yes"]; q3 -> q4 [label="No"];
+  q4 -> biz [label="Yes"]; q4 -> keep [label="No"];
 '''
-    render("fig_decision_source_path", body)
+    render("fig_decision_cloned_item", body)
 
 
-def decision_delivery_option():
-    body = f"""
-  rankdir=TB;
-  start [label="Choose how to reach Pega 26.1.1 from 8.8", fillcolor="{PEGA}"];
-  {decision("q1", "Is the source on 23.1.4,\\n24.1.3, 24.2.2 or a\\nlater patch?")}
-  {decision("q2", "Can the 8.8 nodes reach\\nConfluent and SRS over\\nprivate networking?")}
-  {decision("q3", "Can the business accept\\nthree change windows?")}
-  direct [label="Remove Hazelcast on the source,\\nthen update to 26.1.1\\n(not the case for 8.8)", fillcolor="{AZ}"];
-  three [label="RECOMMENDED: three releases\\nR1 externalize Kafka and search on 8.8\\nR2 move to AKS on the bridge release,\\nremove Hazelcast\\nR3 zero-downtime update to 26.1.1", fillcolor="{OK}"];
-  two [label="Combined R1 + R2: switch Kafka\\nand search during the platform move;\\nthen R3. Deviation from Pega guidance:\\nconfirm with Pega Support first", fillcolor="{DEC}"];
-  start -> q1;
-  q1 -> direct [label="Yes"];
-  q1 -> q2 [label="No (8.8)"];
-  q2 -> q3 [label="Yes"];
-  q2 -> two [label="No"];
-  q3 -> three [label="Yes"];
-  q3 -> two [label="No"];
-"""
-    render("fig_decision_delivery_option", body)
-
-
-def decision_stream_data():
+def decision_migration():
     body = f'''
   rankdir=TB;
-  start [label="Topic or stream in scope", fillcolor="{PEGA}"];
-  {decision("q1", "Pega platform topic\\n(stream.streamNamePattern\\nprefix)?")}
-  {decision("q2", "Application Kafka data set\\non a separate Kafka\\nservice?")}
-  {decision("q3", "Does the consumer need\\nhistory that is still\\nonly in Kafka?")}
-  {decision("q4", "Is the source a Kafka\\ncluster that Cluster Linking\\ncan read?")}
-  drain [label="DRAIN, do not copy.\\nRun Stream Migration activity until\\nqueueSize = 0 and COMPLETED.\\nTarget creates its topics empty\\n(new prefix at the platform move).", fillcolor="{OK}"];
-  keep [label="Out of scope: the external\\nservice stays; repoint only if the\\napplication team requests it", fillcolor="{DEC}"];
-  newo [label="Start data flow from\\n'only new records' after cutover;\\nrecord last offsets as evidence", fillcolor="{OK}"];
-  cl [label="Cluster Linking mirror topics\\n(offsets preserved) then\\npromote at cutover", fillcolor="{OK}"];
-  replay [label="Replay from the system of\\nrecord (database or source app)", fillcolor="{DEC}"];
+  start [label="8.8 content that touches Kafka or search", fillcolor="{PEGA}"];
+  {decision("q1", "Pega stream data in the\\n8.8 embedded Kafka?")}
+  {decision("q2", "Search index in the 8.8\\nembedded Elasticsearch?")}
+  {decision("q3", "Queue item held in\\nthe database?")}
+  {decision("q4", "Application Kafka data set\\non the customer's own\\nKafka cluster?")}
+  drain [label="NOT MIGRATED: hold intake, drain on 8.8,\\nrecord zero counts. 26.1.1 creates\\nempty topics under its own prefix", fillcolor="{OK}"];
+  rebuild [label="NOT MIGRATED: full index build\\nthrough SRS from the upgraded\\ndatabase", fillcolor="{OK}"];
+  clone [label="TRAVELS WITH THE CLONE:\\nhandle as in Section 10.3,\\ntest in rehearsal", fillcolor="{DEC}"];
+  ds [label="DECIDE PER DATA SET\\n(Section 11.3)", fillcolor="{DEC}"];
   start -> q1;
-  q1 -> drain [label="Yes"];
-  q1 -> q2 [label="No"];
-  q2 -> keep [label="Yes, unchanged"];
-  q2 -> q3 [label="Moving to Confluent"];
+  q1 -> drain [label="Yes"]; q1 -> q2 [label="No"];
+  q2 -> rebuild [label="Yes"]; q2 -> q3 [label="No"];
+  q3 -> clone [label="Yes"]; q3 -> q4 [label="No"];
+  q4 -> ds [label="Yes"];
+'''
+    render("fig_decision_migration", body)
+
+
+def decision_app_datasets():
+    body = f'''
+  rankdir=TB;
+  start [label="Application Kafka data set (one at a time)", fillcolor="{PEGA}"];
+  {decision("q1", "Environment is\\nPROD?")}
+  {decision("q2", "Will the customer's\\nKafka cluster stay\\nthe same?")}
+  {decision("q3", "Does the consumer need\\nmessages still only\\nin the old cluster?")}
+  np [label="NON-PRODUCTION: repoint to a test\\ntopic or disable before the batch\\ntier starts; never read PROD topics", fillcolor="{STOP}"];
+  keep [label="KEEP: same cluster and topic;\\nagree start offset with 8.8 last\\ncommitted offset (evidence)", fillcolor="{OK}"];
+  newo [label="NEW CLUSTER: start from\\nnew records only after cutover;\\nrecord last 8.8 offsets", fillcolor="{OK}"];
+  cl [label="NEW CLUSTER WITH HISTORY:\\nConfluent Cluster Linking mirror\\n(offsets kept), promote at cutover", fillcolor="{OK}"];
+  start -> q1;
+  q1 -> np [label="No"];
+  q1 -> q2 [label="Yes"];
+  q2 -> keep [label="Yes"];
+  q2 -> q3 [label="No"];
   q3 -> newo [label="No"];
-  q3 -> q4 [label="Yes"];
-  q4 -> cl [label="Yes"];
-  q4 -> replay [label="No"];
+  q3 -> cl [label="Yes"];
 '''
-    render("fig_decision_stream_data", body)
+    render("fig_decision_app_datasets", body)
 
 
-def decision_search_index():
-    body = f"""
-  rankdir=TB;
-  start [label="Search indexes for each release", fillcolor="{PEGA}"];
-  {decision("q1", "Does the source already\\nuse SRS on the target\\nsearch cluster?")}
-  {decision("q2", "Does the rehearsal show a\\nfull index build fits the\\noutage window?")}
-  r1 [label="Release 1: connect 8.8 to SRS and run\\nthe full index build (Pega documented\\npath; embedded and plug-in data\\nare not migrated)", fillcolor="{OK}"];
-  newid [label="RECOMMENDED for Release 2:\\nnew customerDeploymentId, full build;\\nsource indexes stay intact for rollback", fillcolor="{OK}"];
-  reuse [label="Keep customerDeploymentId; check index\\nstatus and re-index flagged classes;\\nrollback needs a re-index on 8.8", fillcolor="{DEC}"];
-  snap [label="Snapshot copy of SRS indexes:\\nnot used. SRS owns index names and\\nmappings; ES 8 snapshots do not\\nrestore into OpenSearch", fillcolor="{STOP}"];
-  start -> q1;
-  q1 -> r1 [label="No (embedded or\\nlegacy plug-in)"];
-  q1 -> q2 [label="Yes"];
-  q2 -> newid [label="Yes"];
-  q2 -> reuse [label="No"];
-  start -> snap [style=dashed, arrowhead=none];
-"""
-    render("fig_decision_search_index", body)
-
-
-def upgrade_path():
-    body = f"""
-  rankdir=TB; nodesep=0.3; ranksep=0.32;
-  src [label="Pega 8.8 source (production)", fillcolor="{PEGA}"];
-  p1 [label="Prepare on 8.8\\nUpdate Tools, Jakarta JAR review,\\nprimaryKeyUtility dry run,\\ncustom queue processor review", fillcolor="{DEC}"];
-  p2 [label="Build target platform\\nAKS, Confluent, search cluster,\\nSRS, Key Vault, DNS, TLS", fillcolor="{AZ}"];
-  subgraph cluster_r1 {{ label="Release 1: externalize on 8.8 (no Pega software change)"; style="dashed,rounded"; color="{GREY}";
-    r1 [label="Drain stream, switch 8.8 to Confluent;\\nconnect 8.8 to SRS, full index build", fillcolor="{OK}"];
-  }}
-  subgraph cluster_r2 {{ label="Release 2: platform move to AKS on the bridge release"; style="dashed,rounded"; color="{GREY}";
-    r2 [label="Drain, copy database, update to bridge\\n(24.1.4 or later patch), start on AKS\\nwith new topic prefix and index prefix", fillcolor="{OK}"];
-    hz [label="Remove Hazelcast (DSS method)\\nin the same window", fillcolor="{OK}"];
-  }}
-  subgraph cluster_r3 {{ label="Release 3: release update on the same platform"; style="dashed,rounded"; color="{GREY}";
-    r3 [label="Zero-downtime update to 26.1.1\\nsame AKS, Confluent and SRS", fillcolor="{OK}"];
-  }}
-  done [label="Hypercare, handover,\\ndecommission 8.8 estate", fillcolor="{OK}"];
-  src -> p1 -> r1; p2 -> r1;
-  r1 -> r2 [label="rehearsed on staging"];
-  r2 -> hz;
-  hz -> r3 [label="rehearsed on staging"];
-  r3 -> done;
-  {{rank=same; p1; p2}}
-"""
-    render("fig_upgrade_path", body)
-
-
-def release1_flow():
-    body = f"""
-  rankdir=TB; nodesep=0.3; ranksep=0.3;
-  a [label="Pre-checks: Confluent topics ACLs ready, SRS healthy,\\n8.8 nodes reach both privately (Section 17 chain)", fillcolor="{DEC}"];
-  b [label="Confirm queue processors and data flows\\nto drain are RUNNING", fillcolor="{PEGA}"];
-  c [label="Stop producers (web traffic, listeners,\\nproducer data flows)", fillcolor="{PEGA}"];
-  d [label="POST .../pzstream/migration; poll GET until\\nqueueSize=0, timeToDrainMS=0, COMPLETED", fillcolor="{PEGA}"];
-  e [label="Stop all 8.8 nodes", fillcolor="{PEGA}"];
-  f [label="Configure 8.8 for Confluent (stream settings)\\nand SRS (search settings)", fillcolor="{BACK}"];
-  g [label="Start all nodes; Stream landing page shows\\nProvider ExternalKafka, Status NORMAL", fillcolor="{BACK}"];
-  h [label="Full index build through SRS (downtime);\\ncheck index status per class", fillcolor="{BACK}"];
-  {decision("q", "Smoke and search\\ntests pass?")}
-  ok [label="Re-open traffic; hypercare", fillcolor="{OK}"];
-  rb [label="Rollback (Section 15)", fillcolor="{STOP}"];
-  a -> b -> c -> d -> e -> f -> g -> h -> q;
-  q -> ok [label="Yes"]; q -> rb [label="No"];
-"""
-    render("fig_release1_flow", body)
-
-
-def stage2_flow():
+def decision_first_start():
     body = f'''
-  rankdir=TB; nodesep=0.3; ranksep=0.32;
-  a [label="Confirm Hazelcast removed\\n(hazelcast/disabled returns true)", fillcolor="{PEGA}"];
-  b [label="Update SRS to a version listed for\\n26.1.1; confirm search cluster version", fillcolor="{BACK}"];
-  c [label="Kafka readiness: client 4.0.0 compatibility,\\nSystemPulse topic 6 partitions,\\nremove DSS delayeditems/dataflowbased/threadspernode", fillcolor="{EXT}"];
-  d [label="Code readiness: Jakarta EE JARs re-imported,\\nprimary keys present (primaryKeyUtility)", fillcolor="{DEC}"];
-  e [label="Installer job, upgradeType zero-downtime\\nrules migrated and upgraded in new rules schema", fillcolor="{BACK}"];
-  f [label="Rolling restart onto 26.1.1 images;\\ndata schema upgrade", fillcolor="{BACK}"];
-  g [label="Verify Stream provider ExternalKafka / NORMAL,\\nsearch index status, queue processors", fillcolor="{OK}"];
-  {decision("q", "Acceptance\\ntests pass?")}
-  ok [label="Close change; hypercare", fillcolor="{OK}"];
-  rb [label="Rollback (Section 15)", fillcolor="{STOP}"];
-  a -> b -> c -> d -> e -> f -> g -> q;
-  q -> ok [label="Yes"]; q -> rb [label="No"];
-'''
-    render("fig_stage2_flow", body)
-
-
-def cutover_flow():
-    body = f"""
-  rankdir=TB; nodesep=0.3; ranksep=0.3;
-  t0 [label="T-7d: Go/No-Go 1\\nrehearsal evidence accepted", fillcolor="{DEC}"];
-  t1 [label="Change freeze on 8.8; announce outage window", fillcolor="{PEGA}"];
-  t2 [label="Stop producers (web traffic and listeners)", fillcolor="{PEGA}"];
-  t3 [label="Run Stream Migration activity; poll until\\nqueueSize=0, timeToDrainMS=0, COMPLETED", fillcolor="{PEGA}"];
-  t4 [label="Stop all 8.8 nodes; final database backup", fillcolor="{PEGA}"];
-  t5 [label="Restore database to target; installer job\\nupdates it to the bridge release", fillcolor="{BACK}"];
-  t6 [label="Deploy bridge tiers on AKS (new topic prefix);\\nStream provider ExternalKafka / NORMAL", fillcolor="{BACK}"];
-  t7 [label="Remove Hazelcast: set DSS, full stop and start,\\nverify hazelcast/disabled = true", fillcolor="{BACK}"];
-  t8 [label="Full index build (new customerDeploymentId);\\nconfirm index status", fillcolor="{BACK}"];
-  {decision("g2", "Go/No-Go 2\\nsmoke tests pass?")}
-  t9 [label="Switch public DNS to Application Gateway", fillcolor="{OK}"];
-  {decision("g3", "Go/No-Go 3\\nfirst 30 minutes\\nclean?")}
-  t10 [label="Soak period; release freeze; hypercare", fillcolor="{OK}"];
-  rb [label="Rollback (Section 15)", fillcolor="{STOP}"];
-  t0 -> t1 -> t2 -> t3 -> t4 -> t5 -> t6 -> t7 -> t8 -> g2;
-  g2 -> t9 [label="Yes"];
-  g2 -> rb [label="No"];
-  t9 -> g3;
-  g3 -> t10 [label="Yes"];
-  g3 -> rb [label="No"];
-"""
-    render("fig_cutover_flow", body)
-
-
-def rollback_tree():
-    body = f'''
-  rankdir=TB;
-  start [label="Rollback trigger raised", fillcolor="{STOP}"];
-  {decision("q1", "Has public DNS been\\nswitched to the target?")}
-  {decision("q2", "Have users created or\\nchanged cases on the\\ntarget?")}
-  a [label="Abort: leave DNS on 8.8,\\nrestart 8.8 nodes on the original\\ndatabase, re-open intake", fillcolor="{OK}"];
-  b [label="Revert DNS to 8.8; restart 8.8\\non original database; no data\\nreconciliation needed", fillcolor="{OK}"];
-  c [label="Business decision required:\\nfix forward on 26.1.1, or revert and\\nre-key changes made since cutover\\n(see reconciliation report)", fillcolor="{DEC}"];
+  rankdir=TB; ranksep=0.3;
+  start [label="First start of an environment built from a clone", fillcolor="{PEGA}"];
+  {decision("q1", "Installer job completed\\nand log reviewed?")}
+  {decision("q2", "Clean-up items in\\nSection 10.3 signed off?")}
+  {decision("q3", "Stream landing page:\\nExternalKafka, NORMAL,\\nown prefix?")}
+  {decision("q4", "Search landing page:\\nSRS connected, own\\ncustomerDeploymentId?")}
+  {decision("q5", "No connection attempts to\\nPROD or other environments\\nin firewall logs?")}
+  {decision("q6", "Index build complete,\\ncounts match database?")}
+  go [label="GO: release intake", fillcolor="{OK}"];
+  stop [label="NO-GO: keep intake held,\\nfix, repeat the failed check", fillcolor="{STOP}"];
   start -> q1;
-  q1 -> a [label="No"];
-  q1 -> q2 [label="Yes"];
-  q2 -> b [label="No"];
-  q2 -> c [label="Yes"];
+  q1 -> q2 [label="Yes"]; q2 -> q3 [label="Yes"]; q3 -> q4 [label="Yes"];
+  q4 -> q5 [label="Yes"]; q5 -> q6 [label="Yes"]; q6 -> go [label="Yes"];
+  q1 -> stop [label="No"]; q2 -> stop [label="No"]; q3 -> stop [label="No"];
+  q4 -> stop [label="No"]; q5 -> stop [label="No"]; q6 -> stop [label="No"];
 '''
-    render("fig_rollback_tree", body)
+    render("fig_decision_first_start", body)
 
 
 def troubleshoot_kafka():
     body = f'''
   rankdir=TB; ranksep=0.3;
   start [label="Stream status not NORMAL, or queue processors stuck", fillcolor="{STOP}"];
+  {decision("q0", "Stream landing page shows\\nthe Helm bootstrap and\\nprefix (not 8.8 values)?")}
   {decision("q1", "nslookup of bootstrap\\nreturns private IP?")}
   {decision("q2", "openssl s_client to\\nbootstrap:9092 completes\\nTLS?")}
   {decision("q3", "kcat -L lists brokers and\\nall broker names resolve\\nprivately?")}
   {decision("q4", "Pega log shows SASL\\nauthentication failure?")}
   {decision("q5", "Pega log shows topic or\\ngroup authorization\\nerror?")}
   {decision("q6", "Producer errors on\\nrecord size?")}
+  f0 [label="Stale cloned setting: follow\\nSection 10.3 item CD-01; restart", fillcolor="{DEC}"];
   f1 [label="Fix private DNS zone record\\nor VNet link", fillcolor="{DEC}"];
-  f2 [label="Check NSG / firewall / network\\npolicy, private endpoint state", fillcolor="{DEC}"];
-  f3 [label="Add zonal broker records;\\nconfirm all private endpoints\\nare Approved", fillcolor="{DEC}"];
-  f4 [label="Correct STREAM_JAAS_CONFIG\\nin Key Vault; re-sync secret;\\nrestart pods", fillcolor="{DEC}"];
-  f5 [label="Add PREFIXED ACLs for topic and\\ngroup; TRANSACTIONAL_ID and\\nIDEMPOTENT_WRITE", fillcolor="{DEC}"];
-  f6 [label="Raise topic max.message.bytes\\nor align stream.producer.* JVM args", fillcolor="{DEC}"];
+  f2 [label="Check firewall, network policy,\\nprivate endpoint state", fillcolor="{DEC}"];
+  f3 [label="Add zonal broker records;\\nconfirm endpoints Approved", fillcolor="{DEC}"];
+  f4 [label="Correct STREAM_JAAS_CONFIG\\nin Key Vault; re-sync; restart", fillcolor="{DEC}"];
+  f5 [label="Fix PREFIXED ACLs; add\\nTRANSACTIONAL_ID and\\nIDEMPOTENT_WRITE", fillcolor="{DEC}"];
+  f6 [label="Raise topic max.message.bytes\\nto 5,000,000", fillcolor="{DEC}"];
   f7 [label="Collect evidence; open Pega and\\nConfluent support cases", fillcolor="{PEGA}"];
-  start -> q1;
+  start -> q0;
+  q0 -> f0 [label="No"]; q0 -> q1 [label="Yes"];
   q1 -> f1 [label="No"]; q1 -> q2 [label="Yes"];
   q2 -> f2 [label="No"]; q2 -> q3 [label="Yes"];
   q3 -> f3 [label="No"]; q3 -> q4 [label="Yes"];
@@ -454,17 +515,17 @@ def troubleshoot_search():
     body = f'''
   rankdir=TB; ranksep=0.3;
   start [label="Search fails or results are stale", fillcolor="{STOP}"];
-  {decision("q1", "SRS pods Ready\\n(kubectl get pods -n srs)?")}
-  {decision("q2", "Pega can reach SRS\\nservice URL from a\\npega pod?")}
-  {decision("q3", "SRS logs show 401/403\\nfrom token validation?")}
-  {decision("q4", "Search cluster health\\ngreen or yellow?")}
-  {decision("q5", "Incremental indexer queue\\nprocessor backlog or\\nbroken items?")}
-  f1 [label="Check readiness probe, search\\nconnectivity from SRS pod,\\nauthSecret / certsSecret", fillcolor="{DEC}"];
-  f2 [label="Check pegasearch.externalURL,\\nnetwork policy pega to srs", fillcolor="{DEC}"];
-  f3 [label="Check token claims scp and guid,\\nOAuthPublicKeyURL, clock skew", fillcolor="{DEC}"];
+  {decision("q1", "SRS pods Ready\\n(kubectl get pods\\n-n srs-<env>)?")}
+  {decision("q2", "Pega reaches the SRS\\nservice URL from a\\npega pod?")}
+  {decision("q3", "SRS logs show 401 or 403\\nfrom token checks?")}
+  {decision("q4", "OpenSearch cluster\\nhealth green or yellow?")}
+  {decision("q5", "Indexing backlog or\\nbroken items on the\\nindexer queue processor?")}
+  f1 [label="Check SRS to OpenSearch:\\nDNS, TLS, authSecret, role", fillcolor="{DEC}"];
+  f2 [label="Check pegasearch.externalURL\\nand network policy pega to srs", fillcolor="{DEC}"];
+  f3 [label="Decode token: scope, guid,\\nissuer; check OAuthPublicKeyURL\\nand firewall rule to Okta", fillcolor="{DEC}"];
   f4 [label="Fix cluster: disk watermark,\\nshard allocation, node loss", fillcolor="{DEC}"];
-  f5 [label="Kafka path problem: use Kafka\\ntree; then requeue broken items", fillcolor="{DEC}"];
-  f6 [label="Check index status on the Search\\nlanding page; reindex class", fillcolor="{PEGA}"];
+  f5 [label="Kafka path problem: use the\\nKafka tree; then requeue", fillcolor="{DEC}"];
+  f6 [label="Check index status on the Search\\nlanding page; reindex the class", fillcolor="{PEGA}"];
   start -> q1;
   q1 -> f1 [label="No"]; q1 -> q2 [label="Yes"];
   q2 -> f2 [label="No"]; q2 -> q3 [label="Yes"];
@@ -478,69 +539,48 @@ def troubleshoot_search():
 def observability():
     body = f'''
   rankdir=LR;
-  pega [label="Pega web and batch\\nlogs, JVM, PDC alerts", fillcolor="{PEGA}"];
-  srs [label="SRS pods\\nlogs, latency, errors", fillcolor="{BACK}"];
+  pega [label="Pega web and batch\\nlogs, alerts", fillcolor="{PEGA}"];
+  srs [label="SRS pods\\nlogs, errors", fillcolor="{BACK}"];
   aks [label="AKS nodes and pods\\nContainer Insights", fillcolor="{AZ}"];
-  ccl [label="Confluent Cloud\\nMetrics API, audit log topic", fillcolor="{EXT}"];
-  srch [label="Search service\\nhealth, latency, disk, JVM", fillcolor="{EXT}"];
+  ccl [label="Confluent Cloud\\nMetrics API by principal_id", fillcolor="{EXT}"];
+  srch [label="OpenSearch provider\\nhealth, disk, JVM", fillcolor="{EXT}"];
   net [label="Synthetic checks\\nDNS, TCP, TLS expiry", fillcolor="{AZ}"];
   law [label="Log Analytics workspace\\nand Azure Monitor metrics", fillcolor="{AZ}"];
-  pdc [label="Pega Diagnostic Center", fillcolor="{PEGA}"];
   siem [label="SIEM", fillcolor="{SEC}"];
-  dash [label="Platform dashboard\\n(7 distinct health signals)", fillcolor="{OK}"];
-  alert [label="Alert rules and on-call\\nrouting (Section 18)", fillcolor="{OK}"];
+  dash [label="Dashboard per environment\\nand per shared group", fillcolor="{OK}"];
+  alert [label="Alert rules and\\non-call routing", fillcolor="{OK}"];
   pega -> law; srs -> law; aks -> law; net -> law;
-  ccl -> law [label="exporter / connector"];
+  ccl -> law [label="exporter"];
   srch -> law [label="provider integration"];
-  pega -> pdc [style=dashed];
   law -> siem [label="security events"];
   law -> dash; law -> alert;
 '''
     render("fig_observability", body)
 
 
-def migration_workstreams():
-    body = f'''
-  rankdir=LR; nodesep=0.2; ranksep=0.35;
-  subgraph cluster_prep {{ label="Phase 1 Prepare"; style="dashed,rounded"; color="{GREY}";
-    a [label="A0 Upgrade readiness\\n(8.8 assessment)", fillcolor="{DEC}"];
-    b [label="B Kafka platform\\n(Confluent, network)", fillcolor="{EXT}"];
-    e [label="E SRS and search\\nplatform", fillcolor="{EXT}"];
-  }}
-  subgraph cluster_build {{ label="Phase 2 Build and rehearse"; style="dashed,rounded"; color="{GREY}";
-    a1 [label="A Pega config and\\ndatabase update\\n(bridge, then 26.1.1)", fillcolor="{PEGA}"];
-    c [label="C Topics and ACLs", fillcolor="{EXT}"];
-    f [label="F Index rebuild", fillcolor="{BACK}"];
-  }}
-  subgraph cluster_cut {{ label="Phase 3 Cut over"; style="dashed,rounded"; color="{GREY}";
-    d [label="D Stream drain and\\nconsumer state", fillcolor="{PEGA}"];
-    g [label="G DNS and TLS", fillcolor="{AZ}"];
-    h [label="H Application cutover", fillcolor="{OK}"];
-  }}
-  i [label="I Operational handover", fillcolor="{OK}"];
-  a -> a1; b -> c; e -> f; a1 -> d; c -> d; f -> h; d -> h; g -> h; h -> i;
-'''
-    render("fig_migration_workstreams", body)
-
-
 if __name__ == "__main__":
+    for old in OUT.glob("*"):
+        if old.name not in ("fig_target_architecture.png",):
+            old.unlink()
     logical_flows()
     connectivity_chain()
-    srs_auth_flow()
+    okta_token_flow()
     secrets_flow()
-    decision_search_backend()
+    clone_upgrade_flow()
+    cutover_timeline()
+    shared_topology()
+    prod_topology()
+    network_dns_flow()
+    message_path()
+    decision_env_grouping()
+    decision_srs()
+    decision_search_provider()
     decision_confluent()
     decision_kafka_auth()
-    decision_source_path()
-    decision_delivery_option()
-    decision_stream_data()
-    decision_search_index()
-    upgrade_path()
-    release1_flow()
-    stage2_flow()
-    cutover_flow()
-    rollback_tree()
+    decision_cloned_item()
+    decision_migration()
+    decision_app_datasets()
+    decision_first_start()
     troubleshoot_kafka()
     troubleshoot_search()
     observability()
-    migration_workstreams()

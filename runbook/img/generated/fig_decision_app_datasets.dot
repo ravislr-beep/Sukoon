@@ -1,0 +1,25 @@
+digraph G {
+
+  graph [fontname="Liberation Sans", fontsize=11, bgcolor="white", pad="0.3", nodesep="0.35", ranksep="0.45", fontcolor="#1F3864"];
+  node  [fontname="Liberation Sans", fontsize=10, shape=box, style="rounded,filled", fillcolor="white", color="#44546A", penwidth=1.1, margin="0.14,0.07"];
+  edge  [fontname="Liberation Sans", fontsize=9, color="#44546A", fontcolor="#595959", arrowsize=0.7, penwidth=1.0];
+
+
+  rankdir=TB;
+  start [label="Application Kafka data set (one at a time)", fillcolor="#DCE6F2"];
+  q1 [shape=diamond, style="filled", fillcolor="#FFF2CC", label="Environment is\nPROD?", margin="0.04,0.04", fontsize=9.5];
+  q2 [shape=diamond, style="filled", fillcolor="#FFF2CC", label="Will the customer's\nKafka cluster stay\nthe same?", margin="0.04,0.04", fontsize=9.5];
+  q3 [shape=diamond, style="filled", fillcolor="#FFF2CC", label="Does the consumer need\nmessages still only\nin the old cluster?", margin="0.04,0.04", fontsize=9.5];
+  np [label="NON-PRODUCTION: repoint to a test\ntopic or disable before the batch\ntier starts; never read PROD topics", fillcolor="#F8CBAD"];
+  keep [label="KEEP: same cluster and topic;\nagree start offset with 8.8 last\ncommitted offset (evidence)", fillcolor="#E2EFDA"];
+  newo [label="NEW CLUSTER: start from\nnew records only after cutover;\nrecord last 8.8 offsets", fillcolor="#E2EFDA"];
+  cl [label="NEW CLUSTER WITH HISTORY:\nConfluent Cluster Linking mirror\n(offsets kept), promote at cutover", fillcolor="#E2EFDA"];
+  start -> q1;
+  q1 -> np [label="No"];
+  q1 -> q2 [label="Yes"];
+  q2 -> keep [label="Yes"];
+  q2 -> q3 [label="No"];
+  q3 -> newo [label="No"];
+  q3 -> cl [label="Yes"];
+
+}

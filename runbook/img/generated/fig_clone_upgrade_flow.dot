@@ -1,0 +1,29 @@
+digraph G {
+
+  graph [fontname="Liberation Sans", fontsize=11, bgcolor="white", pad="0.3", nodesep="0.35", ranksep="0.45", fontcolor="#1F3864"];
+  node  [fontname="Liberation Sans", fontsize=10, shape=box, style="rounded,filled", fillcolor="white", color="#44546A", penwidth=1.1, margin="0.14,0.07"];
+  edge  [fontname="Liberation Sans", fontsize=9, color="#44546A", fontcolor="#595959", arrowsize=0.7, penwidth=1.0];
+
+
+  rankdir=TB; nodesep=0.3; ranksep=0.32;
+  subgraph cluster_old { label="Pega 8.8 estate (unchanged)"; style="dashed,rounded"; color="#595959"; fontsize=10;
+    p88 [label="Pega 8.8 production\nembedded Kafka, embedded Elasticsearch", fillcolor="#EDEDED"];
+    db88 [label="8.8 production database", shape=cylinder, style=filled, fillcolor="#EDEDED"];
+    p88 -> db88 [arrowhead=none];
+  }
+  clone [label="1 Clone the database\n(production: final clone after 8.8 is stopped)", fillcolor="#F2F2F2"];
+  np [shape=diamond, style="filled", fillcolor="#FFF2CC", label="Non-production\nenvironment?", margin="0.04,0.04", fontsize=9.5];
+  mask [label="2 Mask personal data\n(customer masking policy)", fillcolor="#FCE4D6"];
+  upg [label="3 Installer job: action upgrade\nupgradeType per Pega Support (GQ-04)", fillcolor="#DCE6F2"];
+  clean [label="4 Clean-up and checks of cloned\nKafka and search items (Section 10.3)", fillcolor="#FFF2CC"];
+  dep [label="5 Deploy 26.1.1 tiers: own prefix,\nservice account, customerDeploymentId\nbatch tier at zero, intake held", fillcolor="#DCE6F2"];
+  chk [label="6 Stream and search landing pages,\nqueue processors, cloned items", fillcolor="#FFF2CC"];
+  idx [label="7 Scale batch tier; full index build\nthrough SRS into OpenSearch", fillcolor="#E4DFEC"];
+  rel [label="8 Release intake", fillcolor="#E2EFDA"];
+  db88 -> clone;
+  clone -> np;
+  np -> mask [label="Yes"];
+  np -> upg [label="No (PROD)"];
+  mask -> upg -> clean -> dep -> chk -> idx -> rel;
+
+}

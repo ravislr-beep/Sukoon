@@ -1,0 +1,22 @@
+digraph G {
+
+  graph [fontname="Liberation Sans", fontsize=11, bgcolor="white", pad="0.3", nodesep="0.35", ranksep="0.45", fontcolor="#1F3864"];
+  node  [fontname="Liberation Sans", fontsize=10, shape=box, style="rounded,filled", fillcolor="white", color="#44546A", penwidth=1.1, margin="0.14,0.07"];
+  edge  [fontname="Liberation Sans", fontsize=9, color="#44546A", fontcolor="#595959", arrowsize=0.7, penwidth=1.0];
+
+
+  rankdir=LR; nodesep=0.3; ranksep=0.55;
+  prod [label="Producer on any tier\n(queue-for-processing step,\njob scheduler, Pega service)", fillcolor="#DCE6F2"];
+  qp [label="Queue processor rule\n(stream name)", fillcolor="#DCE6F2"];
+  topic [label="Topic pega-<env>-<stream name>\npartitions 0..n\nreplication factor 3", fillcolor="#E2EFDA"];
+  cg [label="Consumer group\nunder prefix pega-<env>-", fillcolor="#E2EFDA"];
+  bat [label="Batch tier pods\none partition is read by\none consumer at a time", fillcolor="#DCE6F2"];
+  db [label="Database\n(delayed and broken\nitems, case data)", shape=cylinder, style=filled, fillcolor="#F2F2F2"];
+  prod -> qp [label="queue item"];
+  qp -> topic [label="produce\n(idempotent, transactional)"];
+  topic -> cg [arrowhead=none];
+  cg -> bat [label="consume"];
+  bat -> db [label="process; failed items\nbecome broken items"];
+  prod -> db [style=dashed, label="delayed items wait in\nthe database until due"];
+
+}

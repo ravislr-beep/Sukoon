@@ -1,0 +1,27 @@
+digraph G {
+
+  graph [fontname="Liberation Sans", fontsize=11, bgcolor="white", pad="0.3", nodesep="0.35", ranksep="0.45", fontcolor="#1F3864"];
+  node  [fontname="Liberation Sans", fontsize=10, shape=box, style="rounded,filled", fillcolor="white", color="#44546A", penwidth=1.1, margin="0.14,0.07"];
+  edge  [fontname="Liberation Sans", fontsize=9, color="#44546A", fontcolor="#595959", arrowsize=0.7, penwidth=1.0];
+
+
+  rankdir=LR; nodesep=0.35; ranksep=0.7;
+  subgraph cluster_aks { label="Production AKS cluster"; style="dashed,rounded"; color="#595959"; fontsize=10;
+    web [label="Web tier\n(WebUser)", fillcolor="#DCE6F2"];
+    bat [label="Batch tier\n(BackgroundProcessing,\nSearch, Batch, RealTime ...)", fillcolor="#DCE6F2"];
+    srs [label="SRS srs-prd\n3 replicas, network policy", fillcolor="#E4DFEC"];
+    eso [label="External Secrets\nOperator", fillcolor="#FCE4D6"];
+  }
+  k [label="Confluent cluster cc-prd\n(dedicated to PROD)\nprefix pega-prd-, sa-pega-prd", fillcolor="#E2EFDA"];
+  o [label="OpenSearch os-prd\n(dedicated to PROD)\n3 cluster-manager, 3+ data nodes", fillcolor="#E2EFDA"];
+  okta [label="Okta custom authorization\nserver for PROD only", fillcolor="#FCE4D6"];
+  kv [label="Key Vault kv-pega-prd", fillcolor="#FCE4D6"];
+  db [label="Upgraded final clone\n(PROD database)", shape=cylinder, style=filled, fillcolor="#F2F2F2"];
+  web -> k; bat -> k;
+  web -> srs; bat -> srs;
+  srs -> o;
+  web -> okta [style=dashed]; srs -> okta [style=dashed, label="key set"];
+  kv -> eso [style=dotted];
+  web -> db; bat -> db;
+
+}
