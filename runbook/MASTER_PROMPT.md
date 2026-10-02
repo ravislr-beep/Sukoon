@@ -1,6 +1,6 @@
-# Master prompt: Pega Platform 26.1.1 on Azure AKS with Confluent Cloud Kafka and managed OpenSearch
+# Master prompt: Pega Platform 26.1.1 on Azure AKS with Confluent Cloud Kafka and managed OpenSearch, built from a cloned and upgraded Pega 8.8 database
 
-Version 2.0. Use this prompt as the complete brief for producing the customer document. Every instruction in it is mandatory unless it says "should".
+Version 3.0. Use this prompt as the complete brief for producing the customer document. Every instruction in it is mandatory unless it says "should".
 
 ---
 
@@ -8,88 +8,189 @@ Version 2.0. Use this prompt as the complete brief for producing the customer do
 
 You are writing as the delivery lead of a team that has already done this kind of implementation for other clients. The team has these members:
 
-- a Pega Lead System Architect who has deployed Pega Platform '24.2, '25 and '26 on Kubernetes with external Kafka and SRS;
-- a DevOps engineer who maintains the Pega Helm charts pipeline on AKS;
+- a Pega Lead System Architect who has moved Pega 8.x clients to Pega Platform '25 and '26 on Kubernetes, with external Kafka and SRS;
+- a DevOps engineer who runs the Pega Helm charts pipeline on AKS, including the installer job for database upgrades;
 - an Azure cloud architect who owns private networking, DNS and Key Vault;
+- a database administrator who has cloned and upgraded Pega databases;
 - a Kafka engineer who runs Confluent Cloud for several applications;
 - an OpenSearch engineer who runs shared search clusters.
 
-You write for the customer's IT teams: architects, platform engineers, Kafka and search operators, security, and test leads. They will build and run what you describe, so they must be able to follow every step without guessing.
+You write for the customer's IT teams: architects, platform engineers, DBAs, Kafka and search operators, security, and test leads. They will build and run what you describe, so they must be able to follow every step without guessing.
 
-## 2. What the document is about
+## 2. The programme and where this document fits
 
-The document covers **one subject only**: externalized Kafka and externalized search for a **fresh installation** of Pega Platform 26.1.1 on Azure AKS. In detail:
+### 2.1 How the programme moves from 8.8 to 26.1.1
 
-1. Kafka is provided by **Confluent Cloud**. Search is provided by a **managed OpenSearch service**, reached through the Pega **Search and Reporting Service (SRS)**.
-2. Both are configured in the **Pega Helm charts** while Pega 26.1.1 is installed: the `pega` chart's `stream` and `pegasearch` sections, and the `backingservices` chart for SRS. Do not describe configuring them afterwards in the Pega UI, except for checks and settings that only exist there.
-3. The document covers every environment: development, system integration test, user acceptance test, performance or pre-production, and production. Use these names unless the customer gives others, and list the assumed environment set in the scope section.
-4. Non-production environments **share one Confluent Cloud cluster and one OpenSearch service**, with strict data isolation between environments, to reduce cost. Production has its own Kafka cluster and its own OpenSearch service. If you recommend a different split, explain why with evidence.
+The customer is upgrading an existing Pega Platform 8.8 system. They are not upgrading the running 8.8 servers in place. They are using a **clone-and-upgrade** path:
 
-### Out of scope (state this in the document)
+1. **Build the new platform.** Pega 26.1.1 runs on Azure AKS through the Pega Helm charts. It is configured from the start with externalized services: Kafka on **Confluent Cloud**, and search through the Pega **Search and Reporting Service (SRS)** backed by a **managed OpenSearch service**.
+2. **Clone the database.** The current 8.8 Pega database (rules and data schemas) is cloned.
+3. **Upgrade the clone.** The cloned database is upgraded to 26.1.1 with the Pega 26.1.1 installer, run as the Helm chart installer job.
+4. **Start Pega on the upgraded database.** The 26.1.1 environment on AKS runs on the upgraded database and connects to Confluent Cloud and OpenSearch.
+5. **Repeat per environment.** Lower environments are built the same way, for rehearsal and testing.
+6. **Cut over production.** Production uses a final clone, taken when 8.8 is stopped. The 8.8 system and its database stay untouched until rollback is no longer needed.
 
-- Upgrading Pega 8.8 to 26.1.1, Hazelcast removal, Tomcat 10.1 and Jakarta changes, primary key preparation, and any multi-hop update path. Do not describe them.
-- Moving the application, its rules or its case data from 8.8. Another workstream owns this. The document covers only what that move means for Kafka and search, as set out in section 4.
-- Cassandra and Decision Data Store, Constellation, and Pega Diagnostic Center beyond the connectivity they need.
-- General AKS build-out not related to Kafka or search. Cover only the networking, DNS, identity and secrets that Kafka and search depend on.
+### 2.2 What this document covers
+
+The document covers the **Kafka and search part of this programme, end to end**:
+
+1. Designing and configuring Confluent Cloud and managed OpenSearch for Pega 26.1.1 in every environment. Use DEV, SIT, UAT, PERF or pre-production, and PROD unless the customer gives others, and list the assumed set in the scope section.
+2. Configuring both in the **Pega Helm charts** (`pega` chart `stream` and `pegasearch` sections; `backingservices` chart for SRS) as part of the 26.1.1 deployment. Do not describe configuring them afterwards in the Pega UI, except for checks and settings that only exist there.
+3. **What the cloned 8.8 database brings with it** that affects Kafka and search, and what must be changed, removed or checked before and after the first 26.1.1 start (section 4).
+4. Whether Kafka topics and search indexes must be migrated from 8.8, and how in-flight 8.8 work is handled at cutover (section 5).
+5. **Sharing services in non-production.** One Confluent Cloud cluster and one OpenSearch service serve all non-production environments, with strict isolation between them, to reduce cost. Production has its own Kafka cluster and its own OpenSearch service. If you recommend a different split, explain why with evidence.
+6. Testing, failure scenarios, known issues, troubleshooting and operations for Kafka and search.
+
+### 2.3 Covered only as dependencies
+
+Describe each of these only to the depth needed to show how it affects Kafka and search. Name the owner, the gate it must pass, and the source.
+
+- The database clone and the installer upgrade itself: schema handling, `installer.upgrade.upgradeType`, and installer logs.
+- Pega's '25 and later prerequisites that apply to the upgraded database:
+  - Hazelcast removal;
+  - Tomcat 10.1 and Jakarta changes to custom CodeSets and JARs;
+  - primary keys on all tables;
+  - changes to queue processor Dynamic System Settings (DSS).
+
+### 2.4 Out of scope (state this in the document)
+
+- Application functional regression content.
+- Cassandra and Decision Data Store.
+- Constellation.
+- Pega Diagnostic Center beyond the connectivity it needs.
+- General AKS build-out not related to Kafka or search.
 
 ## 3. Questions the document must answer
 
 Answer each one directly, in its own clearly titled section or table row, and cite evidence for each answer.
 
-1. How is Confluent Cloud designed for Pega 26.1.1? Cover cluster type, networking, security, topics, partitions and sizing, per environment.
-2. How is the managed OpenSearch service designed? Cover the provider choice, a version on the Pega SRS compatibility matrix, cluster settings, sizing, security and backups, per environment.
-3. How exactly is each one configured in the Helm charts? Show every key used, its value per environment, and where each secret comes from.
-4. How do several non-production Pega environments share one Kafka cluster and one OpenSearch service without affecting each other, and how is each environment's data kept apart? Cover naming, credentials, access control, quotas, capacity budgets, monitoring and clean-up.
-5. How much does sharing save, and what risks does it add? Give a cost comparison model with the inputs the customer must supply. Do not invent prices.
-6. Once 26.1.1 is configured, must Kafka topics or search indexes be migrated from Pega 8.8? Answer this as a decision (section 4).
-7. How do we test it? Cover connectivity, functional checks, isolation between environments, performance, failures and recovery, and security.
-8. Which failures must be tested? For each one, how is it caused, what should Pega do, how is the failure detected, and how does the system recover?
-9. What are the known issues and challenges from real implementations, and how are they avoided?
-10. How is it run day to day? Cover monitoring, alerts, credential and certificate rotation, capacity reviews, onboarding a new environment, and retiring an environment.
+1. Is the clone-and-upgrade path from 8.8 directly to 26.1.1 supported by Pega? What conditions apply?
+   - Check the supported source versions for the 26.1.1 installer.
+   - Check whether the "remove Hazelcast before updating to '25 or later" requirement applies when the old runtime never runs on the upgraded database.
+   - Record anything Pega Support must confirm in writing (section 4.1).
+2. How is Confluent Cloud designed for Pega 26.1.1? Cover cluster type, networking, security, topics, partitions and sizing, per environment.
+3. How is the managed OpenSearch service designed? Cover the provider choice, a version on the Pega SRS compatibility matrix, cluster settings, sizing, security and backups, per environment.
+4. How exactly is each one configured in the Helm charts, for both the installer (upgrade) run and the deploy run? Show every key, its value per environment, and where each secret comes from.
+5. What does the cloned 8.8 database contain that conflicts with, or overrides, the new Kafka and search configuration? How is each item cleaned up?
+6. How is a cloned non-production environment stopped from connecting to production Kafka topics, production integrations, or another environment's data?
+7. Once 26.1.1 is configured, must Kafka topics or search indexes be migrated from 8.8? How is 8.8 in-flight work handled at the production cutover?
+8. How do several non-production Pega environments share one Kafka cluster and one OpenSearch service without affecting each other, and how is each environment's data kept apart?
+9. How much does sharing save, and what risks does it add? Give a cost comparison model with the inputs the customer must supply. Do not invent prices.
+10. How do we test it? Cover connectivity, functional checks, isolation between environments, performance, failures and recovery, security, and the full rehearsal of clone, upgrade, start and reindex.
+11. Which failures must be tested? For each one, how is it caused, what should Pega do, how is the failure detected, and how does the system recover?
+12. What are the known issues and challenges from real implementations, and how are they avoided?
+13. How is it run day to day? Cover monitoring, alerts, rotation, capacity, onboarding a new environment, refreshing an environment from a new clone, and retiring an environment.
 
-## 4. The 8.8 migration question: evidence you must use and explain
+## 4. The cloned database: what it brings and what must change
+
+This is the part a generic document would miss, so treat it with the most care.
+
+### 4.1 Gating questions for Pega Support
+
+Present these as a table: question, why it matters, evidence found, the answer received, and the date. The Pega pages read so far say that Hazelcast must be removed before updating to '25 or later, and that the change affects both embedded Hazelcast and the Clustering Service. They do not say how this applies to a cloned database that is upgraded offline and started only on a '26 runtime.
+
+Do not assume an answer. Raise a Pega Support request, and record any condition Pega sets (for example, settings that must exist in the database before the upgrade) as a mandatory step in the rehearsal runbook. Ask the same way about:
+
+- the supported source versions for a direct upgrade;
+- any required 8.8 patch level;
+- the upgrade type that suits a cloned database: in-place on the clone, or out-of-place. Use the `installer.upgrade.upgradeType` values the Helm chart documents.
+
+### 4.2 Inventory of Kafka and search items in the cloned database
+
+Before writing the inventory, check in Pega '26 and 8.8 documentation where each item is stored and how 26.1.1 treats it. Give a table with:
+
+- the item;
+- where it lives: a database table, a DSS, a data instance or a rule;
+- what 26.1.1 does with it;
+- the risk;
+- the action: keep, change, delete or check;
+- when the action happens: before the upgrade, after the upgrade but before the first start, or after the first start;
+- the evidence.
+
+Cover at least:
+
+- **Stream and search settings in the database.**
+  - Stream service DSS and prconfig-style DSS from 8.8: the stream provider, broker URL, name pattern and replication.
+  - Explain the order of precedence between Helm-supplied settings and DSS values in the database, and say which one wins. If the documentation does not settle this, make it a rehearsal test.
+  - Search DSS and settings from 8.8: embedded search or plug-in settings, and indexing node settings. Confirm that 26.1.1 uses SRS as configured in Helm.
+- **Leftover stream and indexing records.** Stream node records and decisioning service node records from 8.8, and any search index status or indexing queue records.
+- **Queue processor items.** Delayed items, and broken items held in database tables. Count them before the clone, and decide whether to resolve, discard or reprocess each kind on 26.1.1.
+- **Scheduled and data flow work.**
+  - Job scheduler definitions and their next-run state.
+  - Data flow run records, including any partition or offset state that refers to 8.8 topics. Decide which runs are restarted, and from where.
+- **Application Kafka connections.**
+  - Kafka configuration instances and Kafka data sets that point to the customer's own Kafka clusters.
+  - In a cloned non-production environment, these still point to wherever 8.8 production points. Repoint or disable them **before the first start**.
+- **Other production endpoints in the database.** Connectors, listeners and email accounts that could reach production systems from a cloned environment. Cover them only as a short checklist, with the owner named.
+- **Queue processor DSS that '26 no longer uses.** Settings such as `delayeditems/dataflowbased/threadspernode`, which Pega '26 says must be removed (PEGA0179).
+
+### 4.3 "First start" control for every cloned environment
+
+The document must define a scripted sequence for the first start of each environment built from a clone:
+
+1. Upgrade the clone.
+2. Apply the database clean-up (section 4.2) with a reviewed SQL or Pega-supported method. Say which method Pega supports for each item, and do not invent table names.
+3. Deploy the 26.1.1 tiers with this environment's own Kafka prefix, credentials and `customerDeploymentId`.
+4. Hold the application intake. Keep listeners, job schedulers and queue processors that call external systems disabled until the checks pass.
+5. Check the Stream and search landing pages.
+6. Run the full index build.
+7. Release the intake.
+
+Each step has an owner, a check and the evidence to keep.
+
+### 4.4 Data protection
+
+Non-production clones of production data must follow the customer's data masking policy. State where masking happens: before the upgrade, after it, or at the clone. Note that search indexes are built from the masked data only if masking happens before indexing.
+
+## 5. The 8.8 migration question: evidence you must use and explain
 
 Answer the question "is there a requirement to migrate Kafka topics and search indexes from 8.8?" in a dedicated section. It needs a decision diagram and a table with one row per content type. Check each statement below against the current Pega documentation before using it. If a statement has changed, use the current text and record the change.
 
 | Content | Expected answer | Evidence to check |
 |---|---|---|
-| Pega stream data: queue processor messages, delayed items, data flow partitions | **Not migrated.** Pega states that existing stream data cannot be moved to a new Kafka, because each solution stores data differently. In-flight items are finished or drained on 8.8 before its data is moved, using the Stream Migration activity if 8.8 already uses external Kafka, or by stopping intake and letting queues empty. 26.1.1 starts with empty topics that it creates itself. | Pega docs: "Switching Kafka providers while preserving Stream data"; Helm charts: `MigrationToExternalStream.md` |
+| Pega stream data in Kafka: queue processor messages, data flow stream partitions | **Not migrated.** Pega states that existing stream data cannot be moved to a new Kafka. Before the production clone is taken, stop intake on 8.8 and let queue processors finish. If 8.8 already uses external Kafka, drain with the Stream Migration activity. Record the queue counts at zero, then stop 8.8. 26.1.1 starts with empty topics that it creates itself. | Pega docs: "Switching Kafka providers while preserving Stream data"; Helm charts: `MigrationToExternalStream.md` |
+| Queue items held in the database (for example delayed or broken items) | **Travel with the clone.** These are database content, not Kafka content. Check how 26.1.1 treats them after the upgrade (section 4.2), and test it in rehearsal. | Pega docs on queue processors and delayed processing |
 | Topic names and configuration | **Not migrated.** 26.1.1 creates its own topics under its own `streamNamePattern` prefix. Only the topic settings policy, such as `max.message.bytes`, is carried over, as configuration. | Pega docs: "External Kafka in your deployment" |
-| Search indexes (embedded search, legacy plug-in, or SRS on 8.8) | **Not migrated.** Indexes are built again from the 26.1.1 database. SRS indexes all searchable data after Pega connects to it, which requires a downtime period or a planned indexing window. Elasticsearch 8.x snapshots cannot be restored into OpenSearch, so snapshot copying is not an option. | Pega docs: "Connecting Pega Platform to SRS", "Rebuilding search indexes"; OpenSearch migration documentation |
-| Application Kafka integrations (Kafka data sets that read or write the customer's own topics) | **Possibly in scope.** These belong to the application, not the Pega stream service. For each data set, decide whether to keep the existing topic, point it at a new cluster, or mirror it (for example with Confluent Cluster Linking, which keeps offsets), and agree the start offset. | Pega docs: Kafka data sets; Confluent Cluster Linking documentation |
-| Custom search data (custom indexes, reports that depend on search) | Rebuild and verify on 26.1.1 with a count comparison. | Pega docs: index status and reindex pages |
+| Search indexes (embedded search, legacy plug-in, or SRS on 8.8) | **Not migrated.** Indexes are built from the upgraded database after Pega connects to SRS. Pega states this needs a downtime period, so measure the time in rehearsal and fit it into the cutover plan. Elasticsearch 8.x snapshots cannot be restored into OpenSearch. | Pega docs: "Connecting Pega Platform to SRS", "Rebuilding search indexes"; OpenSearch migration documentation |
+| Application Kafka integrations (Kafka data sets on the customer's own topics) | **Decided per data set.** Choose one: keep the existing topic and cluster, point at a new cluster, or mirror (for example with Confluent Cluster Linking, which keeps offsets). Agree the start offset, so that messages are neither skipped nor processed twice at cutover. | Pega docs: Kafka data sets; Confluent Cluster Linking documentation |
+| Custom search data (custom indexes, reports that depend on search) | Rebuild and verify on 26.1.1 with a count comparison against the database. | Pega docs: index status and reindex pages |
 
-The section must end with a short, firm statement the customer can approve, for example: "No Pega stream topic and no search index is copied from 8.8. Application Kafka topics are handled one by one as listed in Table X."
+The section must end with a short, firm statement the customer can approve, for example: "No Pega stream topic and no search index is copied from 8.8. Database-held queue items travel with the clone and are handled as listed in Table X. Application Kafka topics are handled one by one as listed in Table Y."
 
-## 5. Detailed content required
+## 6. Detailed content required
 
-### 5.1 Architecture
+### 6.1 Architecture
 
 - **Pega's official images.** Show the 26.1.1 architecture using Pega's own images, credited to their source pages, from:
   - Pega docs, "Pega Platform Kubernetes architecture";
   - Pega docs, "External Kafka in your deployment" (Kafka use cases);
   - Pega docs, "External Search in your deployment" and the SRS pages;
+  - the Pega Helm charts zero-downtime and upgrade documentation, for schema diagrams if used;
   - Pega Academy topics on deployment architecture with external services and on the Search and Reporting Service.
 - **New diagrams.** Draw these as clean, consistent architecture diagrams:
-  1. Target architecture on Azure: AKS, Pega tiers, SRS, Application Gateway, private endpoints, Confluent Cloud network, the managed OpenSearch endpoint, Key Vault, the External Secrets Operator, and the hub firewall.
-  2. Shared non-production topology: one Confluent cluster and one OpenSearch service serving four Pega environments, showing the prefix, service account, ACL, index prefix and credential boundaries.
-  3. Production topology, with its dedicated services.
-  4. Network and DNS flow for Confluent Private Link and the OpenSearch private endpoint, showing which DNS zone resolves which name.
-  5. Secret flow: Key Vault, then the External Secrets Operator, then Kubernetes secrets, then the Pega and SRS pods.
-  6. The OAuth token flow between Pega, the identity provider and SRS, including the `guid` claim check.
-  7. The message path inside Pega: queue processor, topic, consumer group, partition, and the batch tier.
+  1. Target architecture on Azure: AKS, Pega tiers, installer job, SRS, Application Gateway, private endpoints, the Confluent Cloud network, the managed OpenSearch endpoint, Key Vault, the External Secrets Operator, the hub firewall, and the upgraded database.
+  2. The clone-and-upgrade flow: 8.8 production, its database, the clone, masking (for non-production), the installer upgrade, clean-up, the 26.1.1 deployment, the index build, and release.
+  3. The production cutover timeline: 8.8 intake stop, drain, final clone, upgrade, first start, index build, checks, DNS switch, and the rollback point.
+  4. Shared non-production topology: one Confluent cluster and one OpenSearch service serving four Pega environments, showing the prefix, service account, ACL, index prefix and credential boundaries.
+  5. Production topology, with its dedicated services.
+  6. Network and DNS flow for Confluent Private Link and the OpenSearch private endpoint.
+  7. Secret flow: Key Vault, then the External Secrets Operator, then Kubernetes secrets, then the Pega, installer and SRS pods.
+  8. The OAuth token flow between Pega, the identity provider and SRS, including the `guid` claim check.
+  9. The message path inside Pega: queue processor, topic, consumer group, partition, and the batch tier.
 - **Decision diagrams.** Include one for each of:
   - the Confluent cluster type;
   - shared or dedicated services per environment;
   - one SRS per environment or one shared SRS;
   - the OpenSearch provider;
   - Kafka authentication;
+  - the treatment of each cloned-database item (section 4.2);
   - whether to migrate 8.8 content;
   - the treatment of application Kafka data sets;
+  - go or no-go at the first start;
   - troubleshooting Kafka;
   - troubleshooting search.
 
-### 5.2 Confluent Cloud design
+### 6.2 Confluent Cloud design
 
 - **Pega's requirements mapped to Confluent Cloud**, one row per requirement:
   - message size settings;
@@ -105,14 +206,14 @@ The section must end with a short, firm statement the customer can approve, for 
 - **Networking.** Cover Azure Private Link (or the private option available for the chosen type), the private DNS zone and its records, and steps to test resolution from an AKS pod.
 - **Security.** One service account per environment, with API keys held in Key Vault. Give the JAAS string format, the exact prefixed ACLs, and the Confluent CLI commands to create, list and remove them. Explain why wildcard ACLs are forbidden on the shared cluster.
 - **Topic design.**
-  - Naming pattern per environment, for example `pega-dev-{stream.name}` and `pega-sit-{stream.name}`.
+  - Naming pattern per environment, for example `pega-dev-{stream.name}` and `pega-sit-{stream.name}`. When an environment is rebuilt from a new clone, explain whether to reuse its prefix (after deleting the old topics) or to use a new one.
   - Replication factor and `max.message.bytes`.
   - Who creates topics: Pega through the admin client, or pre-created topics if policy forbids creation rights.
   - The topics Pega '25 and later need for clustering after Hazelcast removal (verify the list).
 - **Partition budget.** Give a method that measures partitions per environment after the first full start, then adds headroom. Show a worked table with placeholders for the measured numbers, and compare the total with the cluster limit.
 - **Quotas and noisy neighbours.** Cover client quotas per service account where the cluster type supports them (verify availability), producer and consumer limits, and what to do if one environment's load test affects the others.
 
-### 5.3 Managed OpenSearch design
+### 6.3 Managed OpenSearch design
 
 - **Provider options on Azure.** Azure has no first-party managed OpenSearch, so compare third-party managed providers that run on Azure with self-managed OpenSearch on AKS. Assess each on:
   - an OpenSearch version on the SRS matrix;
@@ -124,30 +225,58 @@ The section must end with a short, firm statement the customer can approve, for 
 
   Do not name prices.
 - **SRS compatibility.** Give the SRS image and OpenSearch versions certified for 26.1.1, with the image name `search-n-reporting-service-os`. Where the Pega documentation and the Helm chart README disagree, record the conflict and follow the stricter source.
-- **Cluster settings and sizing.** Give the required cluster settings with the exact API call. Cover sizing (Pega's published sizing tables), shards and replicas per index, the shard budget per node, and disk watermarks.
+- **Cluster settings and sizing.**
+  - Give the required cluster settings with the exact API call.
+  - Base sizing on Pega's published sizing tables and on the searchable data volume measured in the upgraded database.
+  - Cover shards and replicas per index, the shard budget per node, and disk watermarks.
 - **Isolation in the shared non-production service.**
-  - A distinct `customerDeploymentId` per environment, which becomes the index prefix.
+  - A distinct `customerDeploymentId` per environment, which becomes the index prefix. Explain why a cloned environment must never reuse another environment's ID.
   - One SRS per environment (recommended for isolation) or one shared SRS. Compare credentials, blast radius, upgrades and cost.
   - An OpenSearch role per environment restricted to that environment's index pattern, if SRS works with index-scoped permissions. Verify whether SRS needs cluster-level privileges and state the result.
-  - Clean-up of indexes when an environment is rebuilt or retired.
+  - Clean-up of indexes when an environment is refreshed from a new clone or retired.
+- **Index build planning.**
+  - Measure the full build time in each rehearsal and record it against data volume.
+  - Give the method to estimate production time from the rehearsal figures.
+  - State the checks for completeness: index status per class, document counts against database counts, and any CONFLICTS FOUND status.
 - **Backups and restore.** Explain that indexes can always be rebuilt from the Pega database. Snapshots shorten recovery but are optional, so state the recovery time for each choice.
 
-### 5.4 Helm configuration, per environment
+### 6.4 Helm configuration, per environment
 
 - **Every key**, in one table per chart:
-  - for the `pega` chart: `global.customerDeploymentId`, the `stream.*` keys, `pegasearch.*` (including `srsAuth` and `srsMTLS`), `external_secret_name`, the tier settings that matter for Kafka consumers, and the `hazelcast` keys left at their '26 defaults;
+  - for the `pega` chart:
+    - `global.actions.execute` for the upgrade run and the deploy run;
+    - `installer.upgrade.*`;
+    - `global.jdbc` pointing at the upgraded clone;
+    - `global.customerDeploymentId`;
+    - the `stream.*` keys;
+    - `pegasearch.*`, including `srsAuth` and `srsMTLS`;
+    - `external_secret_name`;
+    - the tier settings that matter for Kafka consumers;
+    - the `hazelcast` keys as Pega requires for '26;
   - for the `backingservices` chart: `srsRuntime`, `srsStorage` and `networkPolicy`.
 
   Columns: key, meaning, DEV, SIT, UAT, PERF, PROD, and source.
-- **Complete, valid YAML** values files for one non-production environment and for production. Check every key against the Helm chart README of the chart version used, and state that version.
-- **The secret inventory.** Give the exact key names the charts require (`STREAM_TRUSTSTORE_PASSWORD`, `STREAM_KEYSTORE_PASSWORD`, `STREAM_JAAS_CONFIG`, `SRS_OAUTH_PRIVATE_KEY`, and the SRS storage `username` and `password`), the Key Vault names, and the External Secrets Operator manifests.
-- **Install order and checks.** Pega's install action and its order relative to SRS: network, DNS, secrets, Confluent, OpenSearch, SRS, then Pega install-deploy. Include a check after each step.
+- **Complete, valid YAML** values files for one non-production environment and for production, for both the upgrade run and the steady-state deploy. Check every key against the Helm chart README of the chart version used, and state that version.
+- **The secret inventory.** Give the exact key names the charts require (`STREAM_TRUSTSTORE_PASSWORD`, `STREAM_KEYSTORE_PASSWORD`, `STREAM_JAAS_CONFIG`, `SRS_OAUTH_PRIVATE_KEY`, `DB_USERNAME` and `DB_PASSWORD`, and the SRS storage `username` and `password`), the Key Vault names, and the External Secrets Operator manifests.
+- **Build order and checks**, with a check after each step: network and DNS, then secrets, Confluent, OpenSearch, SRS, the database clone, the installer upgrade, the database clean-up, the Pega deploy with intake held, the index build, and intake release.
 
-### 5.5 Testing
+### 6.5 Testing
 
-- **Test stages.** Cover connectivity, configuration, functional, isolation, performance, resilience, security and operational acceptance. For each, give the entry criteria, the environment, the owner and the evidence produced.
-- **Isolation tests.** Prove that environment A cannot read, write or delete environment B's topics, consumer groups or indexes, using negative tests with A's credentials.
-- **Failure scenario catalogue**, at least 20 rows. Columns: ID, scenario, how to cause it safely, expected Pega behaviour, detection (log message, alert, landing page), recovery, and pass criteria. Include at least:
+- **Test stages.** For each stage, give the entry criteria, the environment, the owner and the evidence produced. Cover:
+  - connectivity, configuration and functional tests;
+  - isolation, performance, resilience and security tests;
+  - operational acceptance;
+  - **full rehearsals of the clone-and-upgrade path**, at least two before production, on production-sized data.
+- **Rehearsal measurements.** Measure, and record against data volume:
+  - drain time on 8.8;
+  - clone time;
+  - upgrade time;
+  - clean-up time;
+  - first start time;
+  - full index build time;
+  - time to release intake.
+- **Isolation tests.** Prove that environment A cannot read, write or delete environment B's topics, consumer groups or indexes, using negative tests with A's credentials. Prove that no cloned environment reaches production Kafka topics or production integrations.
+- **Failure scenario catalogue**, at least 25 rows. Columns: ID, scenario, how to cause it safely, expected Pega behaviour, detection (log message, alert, landing page), recovery, and pass criteria. Include at least:
   - **Kafka access:**
     - the Kafka bootstrap host cannot be reached;
     - the private DNS record is wrong or missing;
@@ -173,63 +302,97 @@ The section must end with a short, firm statement the customer can approve, for 
   - **Shared services:**
     - a non-production load test saturates the shared cluster;
     - an index rebuild runs during business hours;
-    - a wrong `customerDeploymentId` is deployed by mistake.
-- **Exact checks.** For each check, give the command or screen: the Stream landing page, queue processor status, the search landing page, the Confluent CLI, `kcat`, the OpenSearch `_cluster/health`, `_cat/indices` and `_cluster/settings` APIs, and `kubectl`.
+    - a wrong `customerDeploymentId` is deployed by mistake;
+  - **Clone-specific:**
+    - a stale 8.8 stream or search DSS in the cloned database overrides the Helm configuration;
+    - a cloned environment starts with application Kafka data sets still pointing to production;
+    - delayed or broken queue items from 8.8 are processed unexpectedly on 26.1.1;
+    - the installer upgrade fails halfway (resume or restart, per the Helm chart guidance);
+    - the index build is interrupted.
+- **Exact checks.** For each check, give the command or screen: the Stream landing page, queue processor status, the search landing page, the Confluent CLI, `kcat`, the OpenSearch `_cluster/health`, `_cat/indices` and `_cluster/settings` APIs, the installer job logs, and `kubectl`.
 
-### 5.6 Known issues and challenges
+### 6.6 Known issues and challenges
 
 Write these as experience-based guidance: the symptom, the cause, how to prevent it, and how to fix it. Include at least:
 
+- **Cloned database:**
+  - The cloned environment silently uses 8.8 settings from the database instead of the Helm values.
+  - Application Kafka consumers in a test environment read production topics and move their consumer offsets, which affects production.
+  - Leftover 8.8 stream node and index records confuse the landing pages.
+  - Queue items from 8.8 fail on 26.1.1 because the rules they reference changed.
+  - The index build is slower than planned on production-sized data.
 - **Kafka and Confluent:**
-  - Kafka clients reach the bootstrap server but fail on broker connections because broker names resolve to public IPs (Private Link DNS).
+  - Clients reach the bootstrap server but fail on broker connections because broker names resolve to public IPs (Private Link DNS).
   - Too many partitions from many queue processors on a shared cluster.
   - The Confluent topic message size default is lower than Pega's requirement.
   - A JAAS string is stored with the wrong quoting.
   - A secret is changed but pods were not restarted.
   - Topic creation is denied because the policy forbids CREATE.
-  - From '25, Pega uses Kafka for cluster communication after Hazelcast removal, so a Kafka outage affects more than queue processing. Verify this and explain the consequence.
+  - From '25, Pega uses Kafka for cluster messaging that Hazelcast used to carry, so a Kafka outage affects more than queue processing. Verify this and explain the consequence.
 - **OpenSearch and SRS:**
   - Indexes are auto-created with the wrong settings, or index auto-creation is blocked.
   - OAuth claims from the chosen identity provider do not match what SRS checks. For example, Microsoft Entra ID application tokens carry `roles`, not `scp`, and no `guid`. Verify this and give the fix.
   - An SRS image version is not on the matrix for the OpenSearch version.
-  - The time for a full reindex is underestimated.
-  - Indexes are orphaned after an environment is rebuilt with a new `customerDeploymentId`.
-- **Process:** a non-production data refresh from production. Any copied data must be re-indexed under the target environment's own ID, and production credentials must never be used.
+  - Indexes are orphaned after an environment is refreshed with a new `customerDeploymentId`.
+- **Process:** a non-production refresh from a new production clone. Masking, a new or cleaned prefix and index ID, repointed integrations, and a full reindex are required every time.
 
-### 5.7 Operations
+### 6.7 Cutover and rollback (Kafka and search view)
+
+- Give the production cutover sequence from the Kafka and search point of view:
+  - 8.8 intake stop, drain and the zero-count evidence;
+  - the final clone;
+  - the upgrade and clean-up;
+  - the first start with intake held;
+  - the index build and checks;
+  - the cutover of application Kafka data sets (offset handling);
+  - DNS switch and intake release.
+- Rollback restarts 8.8 on its untouched database, with its original Kafka and search. State the point after which rollback loses work done on 26.1.1, and how the business decides whether to accept that.
+
+### 6.8 Operations
 
 - A monitoring table: the signal, its source (Confluent Metrics API, provider metrics, SRS logs, Pega alerts), the threshold and the response.
 - Routine tasks with frequency and owner: API key rotation, certificate renewal, partition and shard capacity review, SRS image updates, OpenSearch version updates, and cost review.
 - Onboarding a new non-production environment onto the shared services, as a numbered checklist.
+- Refreshing an environment from a new clone, as a numbered checklist.
 - Retiring an environment, as a checklist: delete the ACLs, service account, topics, consumer groups, indexes, OpenSearch role and secrets, and record evidence.
-- A RACI between the customer platform team, the Kafka team, the search team, the Pega team, Confluent, and the OpenSearch provider.
+- A RACI between the customer platform team, DBA team, Kafka team, search team, Pega team, Pega Support, Confluent and the OpenSearch provider.
 
-### 5.8 Risks, open decisions, assumptions
+### 6.9 Risks, open decisions, assumptions
 
 - A risk register with likelihood, impact, mitigation and owner.
-- Open decisions, each with options, a recommended answer, an owner and the date by which it is needed: Confluent cluster types, the OpenSearch provider, SRS per environment or shared, the identity provider, the environment list, and the quota approach.
+- Open decisions, each with options, a recommended answer, an owner and the date by which it is needed:
+  - Pega Support answers on the gating questions (section 4.1);
+  - Confluent cluster types;
+  - the OpenSearch provider;
+  - SRS per environment or shared;
+  - the identity provider;
+  - the environment list;
+  - the masking approach;
+  - the treatment of each application Kafka data set;
+  - the quota approach.
 - Assumptions, each with the check that would prove it wrong.
 
-## 6. Evidence rules
+## 7. Evidence rules
 
 1. **Every product statement must cite a source** in square brackets, such as [R7], resolving to a numbered reference list with full URLs. Use, in order of authority:
-   - Pega documentation for Pega Platform '26;
+   - Pega documentation for Pega Platform '26, and for 8.8 where the topic is 8.8 behaviour;
    - the Pega Helm charts GitHub repository (state the chart version);
    - Pega Academy;
    - Confluent Cloud documentation;
    - OpenSearch documentation and the chosen provider's documentation;
    - Microsoft Learn.
 2. **Read each page before citing it**, and record the date it was read.
-3. **If no source settles a point**, say so plainly and turn it into a test in the test plan, or into an open decision. Never fill the gap with an assumption written as fact.
-4. **Record conflicts between sources** in a reconciliation table: the topic, what each source says, and the decision taken.
-5. **Do not state version numbers, limits or defaults from memory.** Copy them from the cited page.
-6. **Pega and third-party images** must carry a source line under the figure. An appendix lists every image with its page and a note that reuse rights must be confirmed before external distribution.
+3. **If no source settles a point**, say so plainly and turn it into a test in the test plan, a Pega Support question, or an open decision. Never fill the gap with an assumption written as fact.
+4. **Do not invent database table names, DSS names, activity names or API paths.** Use only names found in Pega documentation or confirmed by Pega Support.
+5. **Record conflicts between sources** in a reconciliation table: the topic, what each source says, and the decision taken.
+6. **Do not state version numbers, limits or defaults from memory.** Copy them from the cited page.
+7. **Pega and third-party images** must carry a source line under the figure. An appendix lists every image with its page and a note that reuse rights must be confirmed before external distribution.
 
-## 7. Writing rules
+## 8. Writing rules
 
 - **Plain English.** Short sentences in the active voice, one idea per sentence. Write the way an experienced engineer explains a design to a colleague.
 - **Explain every table** in the text before or after it: what it shows and what the reader should do with it. Number and caption every table and figure, and refer to them by number.
-- **Use precise verbs and real nouns**: "set", "create", "check", "restart", "the batch tier", "the service account".
+- **Use precise verbs and real nouns**: "set", "create", "check", "restart", "the batch tier", "the service account", "the cloned database".
 - **Do not use these words or patterns:**
   - leverage, seamless, robust, comprehensive, cutting-edge, state-of-the-art, holistic, synergy, empower, unlock, elevate, streamline, delve, navigate (except for UI navigation), landscape (except Pega's sizing column name), journey, game-changer, best-in-class, world-class, crucial, vital, pivotal, paramount;
   - "it is important to note", "in today's", "in conclusion", "overall", "furthermore", "moreover";
@@ -239,7 +402,7 @@ Write these as experience-based guidance: the symptom, the cause, how to prevent
 - **Use requirement words carefully.** "Must" is for vendor requirements and fixed decisions only. "Should" is for recommendations.
 - **Use angle brackets for environment-specific values** in commands and YAML, for example `<bootstrap-host>`. List each one in the configuration inventory appendix.
 
-## 8. Document structure and format
+## 9. Document structure and format
 
 Produce a Word document (DOCX) with an A4 page, a header with the short title, and a footer reading "Customer Confidential | Page X of Y". It must have:
 
@@ -251,56 +414,66 @@ Produce a Word document (DOCX) with an A4 page, a header with the short title, a
    - a table of contents with page numbers;
    - a list of figures;
    - a list of tables.
-2. **Executive summary:** the design in one page, the cost-sharing approach, the answer to the 8.8 migration question, and the decisions needed.
-3. Scope, assumptions and reading guide by role.
+2. **Executive summary:**
+   - the clone-and-upgrade approach in one paragraph;
+   - the Kafka and search design;
+   - the cost-sharing approach;
+   - the answer to the migration question;
+   - the gating questions for Pega Support;
+   - the decisions needed.
+3. Scope, dependencies, assumptions and reading guide by role (section 2).
 4. Evidence baseline: versions and support facts with sources.
-5. Architecture (5.1).
-6. Shared and dedicated service model, with isolation and cost (5.2, 5.3, and question 5).
-7. Confluent Cloud design and configuration (5.2).
-8. Managed OpenSearch and SRS design and configuration (5.3).
-9. Helm configuration per environment (5.4).
-10. Secrets, certificates and identity.
-11. Deployment runbook per environment, with numbered steps, owner, check and evidence.
-12. The 8.8 content question: decision and treatment (section 4).
-13. Test strategy and failure scenarios (5.5).
-14. Known issues and challenges (5.6).
-15. Troubleshooting, with decision trees and symptom tables.
-16. Operations, onboarding and retirement (5.7).
-17. Risks, open decisions, assumptions and source reconciliation (5.8, 6.4).
-18. **Appendices:**
+5. Architecture (6.1).
+6. Shared and dedicated service model, with isolation and cost.
+7. Confluent Cloud design and configuration (6.2).
+8. Managed OpenSearch and SRS design and configuration (6.3).
+9. Secrets, certificates and identity.
+10. Helm configuration per environment, for the upgrade run and the deploy run (6.4).
+11. The cloned database: gating questions, inventory, clean-up and first-start control (section 4).
+12. The 8.8 content question: decision and treatment (section 5).
+13. Deployment runbook per environment, with numbered steps, owner, check and evidence.
+14. Production cutover and rollback (6.7).
+15. Test strategy, rehearsals and failure scenarios (6.5).
+16. Known issues and challenges (6.6).
+17. Troubleshooting, with decision trees and symptom tables.
+18. Operations, onboarding, refresh and retirement (6.8).
+19. Risks, open decisions, assumptions and source reconciliation (6.9, 7.5).
+20. **Appendices:**
     - A. Configuration inventory per environment.
-    - B. Complete Helm values files.
+    - B. Complete Helm values files (upgrade run and deploy run).
     - C. Command reference.
-    - D. Evidence and test record templates.
+    - D. Evidence, rehearsal and test record templates.
     - E. Glossary.
     - F. References with links.
     - G. Image sources and attribution.
 
-Expected size: 70 to 100 pages. Diagrams must be legible when printed on A4. Code blocks must not wrap.
+Expected size: 80 to 110 pages. Diagrams must be legible when printed on A4. Code blocks must not wrap.
 
-## 9. Acceptance checks before release
+## 10. Acceptance checks before release
 
 The document is complete only when every check passes. Report the result of each check with the document.
 
 1. Every [Rn] resolves to the reference list, and every reference is cited at least once.
 2. Every section, figure and table cross-reference points to the right target.
-3. No banned words or patterns (section 7), and no placeholder text other than angle-bracket values listed in Appendix A.
+3. No banned words or patterns (section 8), and no placeholder text other than angle-bracket values listed in Appendix A.
 4. Every YAML block parses, and every Helm key exists in the chart version stated.
 5. Every command has been checked for correct syntax for the tool version stated.
 6. Every question in section 3 has a findable answer. Give a traceability table from question to section.
 7. Every failure scenario has its cause, expected behaviour, detection, recovery and pass criteria filled in.
-8. Every Pega or third-party figure has a source line.
-9. Five reviewer checklists (section 10) are completed, and their findings are fixed or logged.
+8. Every cloned-database item in section 4.2 has a source, an action and a time point.
+9. Every Pega or third-party figure has a source line.
+10. The reviewer checklists (section 11) are completed, and their findings are fixed or logged.
 
-## 10. Expert review before release
+## 11. Expert review before release
 
 Review the finished document once from each viewpoint below. Fix what you find, and list the findings and fixes in a short review log, which is kept out of the customer copy.
 
 | Reviewer | Must confirm |
 |---|---|
-| Pega Lead System Architect | Stream and search behaviour matches Pega '26 documentation; queue processor, data flow and index status checks are correct; the 8.8 content decision is correct; `customerDeploymentId` handling is safe |
-| DevOps engineer | Helm keys and YAML are valid for the stated chart version; the install order works; secrets never appear in values files; the pipeline steps are repeatable per environment |
-| Azure cloud architect | Private Link and private endpoint DNS work from AKS pods; egress rules and certificate trust are complete; no public path exists to Kafka or OpenSearch |
-| Kafka engineer | Cluster type limits, ACLs, prefixes, partition budget, quotas, message size and failure tests are correct for Confluent Cloud |
-| OpenSearch engineer | Versions match the SRS matrix; cluster settings, roles, index patterns, shard budget, watermarks, snapshot approach and failure tests are correct for the chosen provider |
+| Pega Lead System Architect | Stream and search behaviour matches Pega '26 documentation; the clone-and-upgrade gating questions are complete; the cloned-database inventory and first-start control are correct; the migration decision is correct; `customerDeploymentId` handling is safe |
+| DevOps engineer | Helm keys and YAML are valid for the stated chart version, for both the upgrade and deploy runs; the build order works; secrets never appear in values files; the pipeline steps are repeatable per environment and per refresh |
+| Database administrator | The clone, masking, upgrade and clean-up steps are safe and repeatable; no invented table names; rollback keeps the 8.8 database untouched |
+| Azure cloud architect | Private Link and private endpoint DNS work from AKS pods; egress rules and certificate trust are complete; no public path exists to Kafka or OpenSearch; no cloned environment can reach production endpoints |
+| Kafka engineer | Cluster type limits, ACLs, prefixes, partition budget, quotas, message size, application data set cutover and failure tests are correct for Confluent Cloud |
+| OpenSearch engineer | Versions match the SRS matrix; cluster settings, roles, index patterns, shard budget, watermarks, index build planning, snapshots and failure tests are correct for the chosen provider |
 | Customer IT reader | A new engineer can follow each runbook step without outside help; every table is explained; nothing reads as generic or unproven |
