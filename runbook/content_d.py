@@ -39,6 +39,8 @@ def s9_helm(b):
         ["`tier[web].replicas` and HPA min / max", "Web pods"] + [f"{V.SIZES[c][0]} / {V.SIZES[c][1]}" for c in E.CODES] + ["[R23]"],
         ["`tier[batch].replicas` and HPA min / max", "Batch pods (run F: 0, HPA off)"] + [f"{V.SIZES[c][2]} / {V.SIZES[c][3]}" for c in E.CODES] + ["[R23]"],
         ["`tier[*].pdb.enabled`", "Pod disruption budget"] + ["`true`"] * 6 + ["[R23]"],
+        ["`tier[*].resources`", "Memory, CPU request / limit"] + ["12Gi, 3 / 4"] * 6 + ["[R23]"],
+        ["`tier[*].topologySpreadConstraints`", "Spread over zones (Section 4.6)"] + ["zone, skew 1"] * 6 + ["[R61]"],
         ["`tier[web].service.tls.external_secret_names`", "Backend TLS keystore"] + ["`pega-tier-tls`"] * 6 + ["[R23]"],
         ["`tier[web].ingress.domain`", "Host name"] + ["`<pega-host>`"] * 6 + ["[R23]"],
         ["`cassandra.enabled`", "No Decision Data Store"] + ["`false`"] * 6 + ["[R23]"],
@@ -51,7 +53,7 @@ def s9_helm(b):
         ["`stream.replicationFactor`", "Replicas per partition"] + ["`3`"] * 6 + ["[R23]"],
         ["`stream.external_secret_name`", "STREAM_* keys"] + ["`pega-stream-secret`"] * 6 + ["[R23]"],
         ["`pegasearch.externalSearchService`", "Use SRS"] + ["`true`"] * 6 + ["[R23]"],
-        ["`pegasearch.externalURL`", "SRS service"] + [f"`srs-{c}`" for c in E.CODES] + ["[R23]"],
+        ["`pegasearch.externalURL`", "SRS service, HTTPS port 8443"] + [f"`srs-{c}:8443`" for c in E.CODES] + ["[R23, R62]"],
         ["`pegasearch.srsAuth.enabled`", "OAuth to SRS"] + ["`true`"] * 6 + ["[R23]"],
         ["`pegasearch.srsAuth.url`", "Okta token endpoint"] + ["non-prod server"] * 5 + ["PROD server", "[R23, R43]"],
         ["`pegasearch.srsAuth.clientId`", "Okta client"] + [f"`pega-srs-{c}`" for c in E.CODES] + ["[R23]"],
@@ -66,7 +68,16 @@ def s9_helm(b):
     b.table(["Key", "Meaning"] + E.NAMES + ["Source"], rows, caption="Pega chart keys per environment (chart 4.13.0)",
             widths=[3.5, 2.5, 1.55, 1.55, 1.55, 1.55, 1.55, 1.55, 1.25], size=6.5, label="pega_keys")
     b.callout("note", "Starting replica counts are sized for function, not load. Set the PERF, PREPROD and PROD values from the "
-              "PERF load test (Section 14.5), and keep PREPROD equal to PROD.")
+              "PERF load test (Section 15), and keep PREPROD equal to PROD.")
+    b.h3("Topology spread, heap and garbage collection logging")
+    b.bullets([
+        "`topologySpreadConstraints` is read by the tier template of chart 4.13.0 [R61] but is not listed in the README, so check it in the `helm template` output after every chart upgrade. The label selector must match the pod label the chart sets, `app: <deployment name>-<tier name>`, for example `app: pega-web`.",
+        "The chart defaults the Pega container to 12Gi of memory with a commented heap of 8192m [R23]. Keep the heap at about two thirds of the container memory: the JVM also needs native memory for threads, metaspace, Kafka client buffers and the code cache, and a container that exceeds its limit is killed without a Java error.",
+        "Set the JVM arguments Pega recommends in `tier[*].javaOpts` [R63]: garbage collection logging to `/usr/local/tomcat/logs/gc.log`, `-XX:MaxMetaspaceSize=768m` so metaspace cannot exhaust node memory, `-XX:+UseStringDeduplication` and `-XX:+HeapDumpOnOutOfMemoryError`. The values files in Appendix B carry them. GC logs and heap dumps are on ephemeral pod storage, so the log collector must tail the GC file (Section 18.2).",
+        "Pega images run in Etc/UTC. If the cloned 8.8 database does not use UTC, set `-Duser.timezone` to the database time zone in `javaOpts` and in the installer's `customJVMArgs` as well [R63]. A mismatch between the two shifts delayed queue items and job scheduler times.",
+        "Long GC pauses show up as Kafka consumer group rebalances and as SRS request timeouts, so the GC log is the first thing to read when those appear (Section 17).",
+        "Set `pegaDiagnosticUser` and its password through the diagnostic secret, so support staff can download Tomcat logs without a redeploy [R23].",
+    ])
     b.h2("Backingservices chart keys per environment")
     rows = [
         ["`global.k8sProvider`", "Provider"] + ["`aks`"] * 6 + ["[R24]"],
@@ -79,11 +90,13 @@ def s9_helm(b):
         ["`srs.srsStorage.provisionInternalESCluster`", "External search"] + ["`false`"] * 6 + ["[R24]"],
         ["`srs.srsStorage.domain`", "OpenSearch host"] + [f"`{E.search(g)}`" for _, _, g in E.ENVS] + ["[R24]"],
         ["`srs.srsStorage.port`, `protocol`", "Endpoint"] + ["`443`, `https`"] * 6 + ["[R24]"],
-        ["`srs.srsStorage.tls.enabled`", "TLS to OpenSearch"] + ["`true`"] * 6 + ["[R24]"],
+        ["`srs.srsRuntime.resources`", "CPU request / limit, memory"] + ["1 / 2, 4Gi"] * 6 + ["[R14, R24]"],
+        ["`srs.srsRuntime.affinity`", "Zone anti-affinity"] + ["preferred"] * 6 + ["[R24]"],
+        ["`srs.srsStorage.tls.enabled`", "Certificate authentication, not encryption ({ref:tab_srs_traps})"] + ["`false`"] * 6 + ["[R24]"],
         ["`srs.srsStorage.basicAuthentication.enabled`", "SRS user"] + ["`true`"] * 6 + ["[R24]"],
         ["`srs.srsStorage.authSecret`", "username, password"] + ["`srs-search-credentials`"] * 6 + ["[R24]"],
         ["`srs.srsStorage.requireInternetAccess`", "No internet egress"] + ["`false`"] * 6 + ["[R24]"],
-        ["`srs.srsStorage.networkPolicy.enabled`", "Network policy"] + ["`true`"] * 6 + ["[R24]"],
+        ["`srs.srsStorage.networkPolicy.enabled`", "Chart policy off; own policy (Section 7.7)"] + ["`false`"] * 6 + ["[R62]"],
     ]
     b.table(["Key", "Meaning"] + E.NAMES + ["Source"], rows, caption="Backingservices chart keys per environment",
             widths=[3.5, 2.5, 1.55, 1.55, 1.55, 1.55, 1.55, 1.55, 1.25], size=6.5, label="srs_keys")
@@ -125,6 +138,7 @@ def s10_clone(b):
         ["GQ-05", "How does 26.1.1 treat 8.8 stream and search DSS and node records in an upgraded database, and which takes precedence: DSS in the database or Helm settings?", "A stale DSS could override the Helm configuration", "Not settled; tested as FS-24", "Open", ""],
         ["GQ-06", "How are 8.8 delayed and broken queue items processed after the upgrade, given the '26 queue processing changes?", "Items may fail or run unexpectedly", "'26 changes queue processing [R3]", "Open", ""],
         ["GQ-07", "Is any SRS or customerDeploymentId state stored in the database that a clone would carry?", "Could link a clone to another environment's indexes", "Not settled; tested as IT-05", "Open", ""],
+        ["GQ-08", "Does the 26.1.1 installer need a Kafka connection while it upgrades an 8.8 database, and if so how is it supplied in the Helm installer job?", "Run U could fail or stall; chart 4.13.0 passes no stream settings to the installer job", "From '25, Pega command-line tooling needs Kafka [R8]; rendered run U has no `STREAM_*` values", "Open", ""],
     ], caption="Gating questions for Pega Support", widths=[1.3, 4.6, 3.6, 3.2, 1.6, 1.3], size=8, label="gq")
     b.callout("important", "Until the answers arrive, the plan assumes the conservative answer for each question: rehearse the "
               "full path twice, apply the clean-up in Section 10.3, and treat any difference from expected behaviour as a "
@@ -159,6 +173,8 @@ def s10_clone(b):
         ["CD-12", "Hazelcast-related settings from 8.8", "DSS and prconfig values", "Hazelcast removed in '25", "Unknown until GQ-03 is answered", "Apply Pega Support's instructions", "B or A", "[R5]"],
         ["CD-13", "Tables without primary keys", "Database", "Required for '25 and later", "Upgrade blocked", "Run primaryKeyUtility as the DBA team plans", "B", "[R10]"],
         ["CD-14", "Custom search properties and reports that rely on search", "Rules", "Indexed by SRS after the build", "Feature behaves differently on SRS", "List them; include in the functional checks (Section 14.4)", "S", "[R14]"],
+        ["CD-15", "Partition count DSS `prconfig/dsm/services/stream/pyTopicPartitionsCount/default` and per-topic partition changes made on 8.8", "DSS (ruleset Pega-Engine)", "Applies to every topic created at first start [R49]", "Partition count, and so Confluent capacity and cost, differs from the plan", "Record the value; keep or reset to 6 with the performance lead; recount with K-5", "A", "[R49]"],
+        ["CD-16", "Pega Diagnostic Center endpoint and settings from production", "Configure > System > Settings", "Clone sends diagnostics to the production PDC endpoint [R51]", "Non-production alerts mixed with production in PDC", "Point each environment at its own PDC endpoint, or clear it", "F", "[R51]"],
     ], caption="Kafka and search items in the cloned database", widths=[1.1, 2.7, 2.5, 2.2, 2.3, 3.2, 0.9, 1.1], size=7, label="inventory")
     b.callout("caution", "Do not change these items with direct SQL against Pega tables unless Pega Support provides the "
               "statement for this release. Use the Pega screens named in the table during run F, when no background "

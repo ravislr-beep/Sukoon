@@ -420,7 +420,7 @@ class Builder:
         cell = tbl.rows[0].cells[0]
         _shade(cell._tc, "F3F3F3")
         lines = text.strip("\n").split("\n")
-        if len(lines) <= 60:
+        if len(lines) <= 45:
             _no_split(tbl.rows[0])
         para = cell.paragraphs[0]
         for i, line in enumerate(lines):

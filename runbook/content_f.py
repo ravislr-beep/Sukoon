@@ -1,4 +1,4 @@
-"""Sections 15 to 18: known issues, troubleshooting, operations, risks and decisions."""
+"""Sections 16, 17, 19 and 20: known issues, troubleshooting, operations, risks and decisions."""
 from content_a import GEN, PUB, OWN
 import envs as E
 
@@ -7,7 +7,7 @@ def _issues(b, caption, rows):
     b.table(["Symptom", "Cause", "Prevention", "Fix"], rows, caption=caption, widths=[4, 3.8, 4.4, 4.4], size=8)
 
 
-def s15_issues(b):
+def s16_issues(b):
     b.h1("Known issues and challenges")
     b.p("These are the problems that come up in this kind of implementation. Each one names the symptom, the cause, how to "
         "prevent it and how to fix it.")
@@ -29,22 +29,39 @@ def s15_issues(b):
         ["Old credential still in use after rotation", "Pods not restarted after the secret changed (FS-20)", "Restart is a rotation step", "Rolling restart"],
         ["Topic creation denied", "Security policy removed CREATE from the ACL", "Decide OD-11 early; pre-create topics if needed", "Restore CREATE or pre-create the topic"],
         ["Kafka outage stops more than queue processing", "From '25, Pega uses Kafka for cluster messaging that Hazelcast carried [R7]", "Treat Kafka as tier-1; FS-01", "Restore Kafka; check nodes reconnect"],
+        ["Producer and consumer latency rises during restarts; brief stream errors", "Connection or request limits enforced on Enterprise clusters [R31]", "Measure connections per pod; stagger restarts in shared groups; FS-31", "Wait for throttling to end; restart in smaller steps"],
+        ["First start or refresh takes far longer than planned", "Partition creation paced at 500 per five minutes per cluster [R31]", "Include topic creation time in rehearsals; one refresh per group at a time; FS-32", "Let creation finish; do not restart pods mid-way"],
+        ["Partition count far above the budget after first start", "Cloned 8.8 partition DSS (CD-15) [R49]", "Record the DSS at time point A", "Reset the DSS; resize with `pxAlterStreamPartitions` if Pega Support agrees"],
+        ["Adding batch pods does not increase throughput", "Consumers already equal partitions [R50]", "Effective consumer formula (Section 6.7)", "Raise partitions for the bottleneck queue processor"],
+        ["Installer job stalls or logs Kafka connection errors", "Upgrade tooling may need Kafka (GQ-08) [R8]", "Allow installer egress to Confluent until GQ-08 is answered", "Supply the stream settings as Pega Support advises; rerun"],
     ])
     b.h2("OpenSearch and SRS")
     _issues(b, "Known issues: OpenSearch and SRS", [
         ["Indexes created with wrong names or settings, or index creation blocked", "Auto-creation not disabled, or SRS user lacks rights [R14]", "Apply cluster settings before SRS starts; IT-06", "Apply settings; widen the role by the missing permission only; rebuild"],
         ["SRS returns 401 or 403; Pega search fails", "Okta token missing `pega.search:full`, missing or wrong `guid`, or issued by the org authorization server [R42, R44]", "Custom authorization server; O-2 decode in every environment", "Fix the scope, claim or server; restart Pega if the client changed"],
         ["SRS will not start against OpenSearch", "SRS image not on the matrix for the OpenSearch version [R14]", "Pin versions per Section 7.2", "Use a matrix pair"],
-        ["Old indexes remain after a refresh", "Refresh skipped the index clean-up", "Refresh checklist step (Section 17.4)", "Delete `pega26-<code>*` as the environment's SRS user, then rebuild"],
+        ["Old indexes remain after a refresh", "Refresh skipped the index clean-up", "Refresh checklist step (Section 19.3)", "Delete `pega26-<code>*` as the environment's SRS user, then rebuild"],
         ["Index deletion fails", "`destructive_requires_name` true [R14]", "OS-2", "Set to false"],
+        ["`helm install` of SRS fails: \"Only one authentication can be enabled\"", "`srsStorage.tls.enabled` and basic authentication both true; `tls` means certificate authentication [R24]", "`tls.enabled: false`; `helm template` in the pipeline", "Set `tls.enabled: false`"],
+        ["Pega search fails at first start; SRS pods healthy", "`externalURL` without `:8443`; SRS serves HTTPS on 8443 only [R62]", "URL with port; S-5 from the Pega namespace", "Correct the URL; restart the Pega tiers"],
+        ["SRS pods never Ready; timeouts to OpenSearch and Okta", "Chart network policy allows egress only to an in-cluster Elasticsearch [R62]", "Chart policy off; own policy (Section 7.7)", "Disable the chart policy; apply the replacement"],
+        ["Search fails for all environments at once", "Okta org rate limit reached on the token endpoint [R52]", "Token rate measured; System Log warnings alerted; FS-35", "Find the caller; lengthen token lifetime"],
+        ["Search fails after an Okta key change", "SRS keeps an old signing key, or Pega's client key mismatches [R53]", "FS-33 and FS-34 in DEV", "Restart SRS; restore the client key"],
+    ])
+    b.h2("Platform")
+    _issues(b, "Known issues: platform", [
+        ["Most pods of a tier in one zone after a zone incident", "Spread is a scheduling preference; running pods are not moved back [R61]", "Check the spread after FS-21", "Rolling restart of the tier"],
+        ["Pods killed with OOMKilled and no Java error", "Heap too close to the container memory limit", "Heap at about two thirds of the limit (Section 9.2)", "Lower the heap or raise the limit"],
+        ["Delayed items and job schedulers run at the wrong hour", "JVM time zone differs from the cloned database [R63]", "`-Duser.timezone` in `javaOpts` and installer `customJVMArgs`", "Set both; restart"],
+        ["GC logs and heap dumps lost after a crash", "Written to ephemeral pod storage [R23]", "Log collector tails the GC file (Section 18.2)", "Collect from the replacement pod; enable collection"],
     ])
     b.h2("Process")
     b.p("Every refresh of a non-production environment from a new production clone repeats the risky parts of the first build: "
         "masking, topic and index clean-up, repointed integrations and a full reindex. Treat each refresh as a change with "
-        "the checklist in Section 17.4, not as a database task alone.")
+        "the checklist in Section 19.3, not as a database task alone.")
 
 
-def s16_troubleshooting(b):
+def s17_troubleshooting(b):
     b.h1("Troubleshooting")
     b.h2("Method")
     b.p("Most failures between Pega and Kafka or search are connectivity failures. Work through the chain in {ref:fig_chain} in "
@@ -86,24 +103,10 @@ def s16_troubleshooting(b):
         "decoded token claims, and the values file with secrets removed.")
 
 
-def s17_ops(b):
+def s19_ops(b):
     b.h1("Operations, onboarding, refresh and retirement")
-    b.h2("Monitoring")
-    b.figure(GEN + "fig_observability.png", "Telemetry flows", OWN, width_cm=16)
-    b.table(["Signal", "Source", "Threshold", "Response"], [
-        ["Stream service status", "Pega (Stream landing page, alerts)", "Not NORMAL", "Section 16.2"],
-        ["Queue backlog", "Pega Admin Studio", "Ready to process grows for longer than the agreed period", "Check batch tier and consumer errors"],
-        ["Broken queue items", "Pega Admin Studio", "Above zero for business-critical processors", "Investigate and requeue"],
-        ["Consumer lag and request errors per principal", "Confluent Metrics API", "Lag above baseline; authentication or authorization errors", "Section 16.2"],
-        ["Partition count per cluster", "Confluent Metrics API", "Above 70 % of the cluster limit", "Capacity review (Section 6.7)"],
-        ["Throughput per service account", "Confluent Metrics API [R36]", "At quota for longer than 15 minutes", "Review quota or schedule"],
-        ["SRS errors and latency", "SRS logs", "Above baseline", "Section 16.3"],
-        ["OpenSearch health", "Provider metrics", "Yellow for longer than 30 minutes; red at once", "Section 16.3"],
-        ["OpenSearch disk", "Provider metrics", "Above the low watermark less 10 points", "Add storage"],
-        ["Okta token failures", "Pega log; Okta system log", "Any repeated failure", "Section 16.3"],
-        ["Certificate expiry", "Synthetic checks", "Less than 30 days", "Renew (Section 8.4)"],
-        ["Private DNS resolution", "Synthetic checks", "A public IP or no answer", "Section 4.4"],
-    ], caption="Monitoring signals, thresholds and responses", widths=[3.8, 3.6, 5, 4.2], size=8.5)
+    b.p("Monitoring, logging and alerting are in Section 18. This section covers the routine work that keeps the "
+        "services healthy and the procedures for adding, refreshing and removing an environment.")
     b.h2("Routine tasks")
     b.table(["Task", "Frequency", "Owner", "Procedure"], [
         ["Confluent API key rotation", "Per security policy", "Kafka engineer", "Section 8.3"],
@@ -166,7 +169,7 @@ def s17_ops(b):
     ], caption="RACI (Okta objects are owned by the customer identity team: A/R)", widths=[3.6, 1.6, 1.5, 1.5, 1.5, 1.5, 1.6, 1.6, 2.2], size=7.5)
 
 
-def s18_risks(b):
+def s20_risks(b):
     b.h1("Risks, open decisions, assumptions and source reconciliation")
     b.h2("Risk register")
     b.table(["ID", "Risk", "L", "I", "Mitigation", "Owner"], [
@@ -182,12 +185,16 @@ def s18_risks(b):
         ["RK-10", "Delayed or broken items fail after the upgrade", "M", "M", "Drain fully; resolve broken items; FS-28; GQ-06", "Pega LSA"],
         ["RK-11", "Masking breaks search or integration keys", "M", "M", "Masking rules agreed with the application team; search tests on masked data", "DBA team"],
         ["RK-12", "Vendor documentation changes between rehearsal and cutover", "M", "M", "Recheck Section 3 before each rehearsal", "Enterprise architect"],
+        ["RK-13", "Confluent connection and request limits throttle Pega during restarts or peaks", "M", "M", "Measure connections and requests per pod; stagger restarts; throttle alert; FS-31", "Kafka team"],
+        ["RK-14", "One Okta org rate limit shared by all environments and other applications", "M", "H", "Token rate measured; System Log alerts; token lifetime; FS-35", "Identity team"],
+        ["RK-15", "The installer needs Kafka during the upgrade and the chart does not supply it", "L", "H", "GQ-08; installer egress to Confluent allowed in DEV", "Pega LSA"],
+        ["RK-16", "Load test unrepresentative, so PROD is undersized", "M", "H", "Workload model from production logs; exit criteria in Section 15.5", "Performance lead"],
     ], caption="Risk register (L likelihood, I impact: H high, M medium, L low)", widths=[1.3, 5.6, 0.7, 0.7, 6, 2.3], size=8.5)
     b.h2("Open decisions")
     b.p("Each open decision has a recommended answer, an owner and the milestone by which it is needed (Section 13.2). If a "
         "decision is not taken by its milestone, the recommended answer applies and the risk is recorded.")
     b.table(["ID", "Decision", "Options", "Recommended answer", "Owner", "Needed by"], [
-        ["OD-01", "Pega Support answers (GQ-01 to GQ-07)", "Answers received; conservative plan", "Raise now; plan conservatively until answered", "Pega LSA", "M2"],
+        ["OD-01", "Pega Support answers (GQ-01 to GQ-08)", "Answers received; conservative plan", "Raise now; plan conservatively until answered", "Pega LSA", "M2"],
         ["OD-02", "Confluent cluster types", "Enterprise; Dedicated", "Enterprise for NP1; PROD type for NP2 and PROD after PERF measurement", "Kafka team", "M2 (NP1), M3 (NP2, PROD)"],
         ["OD-03", "OpenSearch provider", "Third-party managed on Azure; self-managed on AKS", "Provider that passes Section 7.3", "Enterprise architect", "M2"],
         ["OD-04", "SRS per environment or shared", "Per environment; per group", "Per environment", "Search team", "M2"],
@@ -210,6 +217,9 @@ def s18_risks(b):
         ["AS-05", "8.8 queues can be drained within the planned window", "Rehearsal drain time"],
         ["AS-06", "Non-production environments have their own AKS namespaces and network policies", "Platform design review"],
         ["AS-07", "The firewall supports FQDN rules for `<okta-domain>`", "Firewall policy test"],
+        ["AS-08", "The AKS clusters were created with a network policy engine, so NetworkPolicy objects are enforced", "A test pod reaches a target that a policy denies"],
+        ["AS-09", "The Azure region offers three availability zones for the node sizes chosen", "Node pool creation with zones 1, 2 and 3 fails"],
+        ["AS-10", "Production request logs or Pega PDC data are available to build the workload model", "No usable 8.8 usage data"],
     ], caption="Assumptions", widths=[1.4, 7.6, 7.6], size=9)
     b.h2("Source reconciliation")
     b.p("These are the places where sources disagree or leave a gap, with the action taken.")
@@ -223,4 +233,8 @@ def s18_risks(b):
         ["RC-07", "DSS and Helm precedence", "Not settled by the pages read", "FS-24; GQ-05"],
         ["RC-08", "SRS checks on issuer and audience", "Pega documents the signature and guid checks only [R23]", "FS-12 in DEV"],
         ["RC-09", "Okta app attributes in client credentials tokens", "Expression language lists app attributes [R46]; client credentials page does not mention them [R43]", "DEV test before choosing option 2"],
+        ["RC-10", "SRS replicas in test environments", "Pega sizing: 1 SRS for testing and development [R14]; SRS chart README: minimum 2, best practice 3 [R24]", "2 in DEV, SIT and UAT; 3 elsewhere"],
+        ["RC-11", "SRS pod resources", "Pega sizing: 2 CPU, 2 GB [R14]; chart defaults: 0.65 to 1.3 CPU, 4Gi [R24]", "Request 1 CPU, limit 2 CPU, 4Gi; adjust from PERF"],
+        ["RC-12", "Topology spread for Pega tiers", "Read by the chart 4.13.0 template [R61]; not in the README [R23]", "Use it; check in `helm template` output after each chart upgrade"],
+        ["RC-13", "OpenSearch storage and shard sizing", "Pega gives node sizes only [R14]; general OpenSearch guidance gives formulas [R54, R55]", "Use the formulas with measured index sizes (Section 7.4)"],
     ], caption="Source reconciliation register", widths=[1.3, 3.2, 7.4, 4.7], size=8)

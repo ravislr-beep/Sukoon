@@ -1,6 +1,7 @@
 """Sections 7 and 8: managed OpenSearch, SRS and Okta; secrets and certificates."""
 from content_a import GEN, PUB, OWN
 import envs as E
+import values_gen as V
 
 
 def s7_search(b):
@@ -72,6 +73,7 @@ def s7_search(b):
         ["Data nodes", "Production, stage", "3", "4", "16", "100"],
         ["Data nodes", "Testing, development", "1", "2", "8", "100"],
         ["SRS", "Production, stage", "3 (autoscaled)", "2", "2", "N/A"],
+        ["SRS (chart 4.13.0 defaults, for comparison)", "All", "2 minimum, 3 best practice [R24]", "0.65 request, 1.3 limit", "4", "N/A"],
         ["SRS", "Testing, development", "1 (autoscaled)", "2", "2", "N/A"],
     ], widths=[4.4, 3.4, 2.4, 1.8, 2.2, 2.4], caption="Pega default sizing for search and SRS (source [R14])", size=9)
     b.table(["Service", "Starting size", "Basis", "Adjust when"], [
@@ -83,8 +85,24 @@ def s7_search(b):
         "**Searchable data volume.** Measure it from the first upgraded clone: run the full index build in DEV and record index sizes with `_cat/indices` (command S-4). Scale PROD storage from that, plus growth and one rebuild's working space.",
         "**Shards and replicas.** SRS creates and names the indexes itself [R14]. After the first build, read the shard and replica count of each index with `_cat/indices` and record it in Appendix A. Do not change index settings directly unless Pega Support advises it.",
         "**Shard budget.** Add up the shards of every environment on the service and compare with the provider's per-node shard limit.",
-        "**Disk watermarks.** Record the provider's low, high and flood-stage watermark values in Appendix A, and alert before the low watermark is reached (Section 17.1). At the flood stage, indexes become read-only and indexing stops (FS-17).",
+        "**Disk watermarks.** Record the provider's low, high and flood-stage watermark values in Appendix A, and alert before the low watermark is reached (Section 18.5). At the flood stage, indexes become read-only and indexing stops (FS-17).",
     ])
+    b.h3("Sizing formulas")
+    b.p("Pega does not publish a storage or shard formula for SRS. The formulas below are the general OpenSearch sizing "
+        "guidance published for Amazon OpenSearch Service [R54, R55], which applies to any OpenSearch cluster because it rests "
+        "on OpenSearch's own overheads. Use them with the measured index sizes from the DEV build. The sizing calculator in "
+        "Appendix H applies them.")
+    b.table(["Quantity", "Formula", "Notes"], [
+        ["Primary data (S)", "Sum of `pri.store.size` for `pega26-<code>*` after a full build (S-4)", "Measured, never estimated from database size. Scale to PROD by the ratio of indexed row counts"],
+        ["Minimum storage", "S x (1 + replicas) x 1.45 [R54]", "1.45 covers 10 % indexing overhead, 5 % reserved by the operating system and 20 % free space kept below the watermarks"],
+        ["Storage with growth", "Minimum storage x (1 + yearly growth) ^ years planned", "Add the peak seen during a full rebuild in DEV if it is above the steady state"],
+        ["Shard size", "10 to 30 GiB per primary shard for search workloads [R55]", "SRS sets shard counts. Record them; raise a Pega Support case before changing index settings"],
+        ["Shards per node", "At most 25 shards per GiB of JVM heap [R55]", "Heap is normally half the node memory. Add every environment on a shared service"],
+        ["Data nodes", "Largest of: storage / usable disk per node; total shards / shards per node; 3 for zone spread", "Use a multiple of the zone count, so each zone holds a full copy of the data"],
+    ], caption="OpenSearch sizing formulas", widths=[3.2, 6.6, 6.8], size=8.5, label="os_formulas")
+    b.p("Use at least one replica, three cluster-manager nodes and data nodes in three availability zones, with the provider's "
+        "zone awareness setting turned on. With one replica and zone awareness, the loss of one zone leaves a full copy of "
+        "every shard, so search stays available while the provider replaces the nodes (FS-15).")
     b.h2("Isolation in the shared OpenSearch services")
     b.p("Each environment has its own customerDeploymentId (Section 2.6). Set it explicitly in every values file, because the "
         "chart defaults it to the namespace name [R23], and treat it as immutable, as Pega asks when several environments "
@@ -96,7 +114,7 @@ def s7_search(b):
         ["Blast radius", "An SRS fault or bad upgrade affects one environment", "Affects every environment in the group"],
         ["Upgrades", "Upgrade SRS per environment, in step with that environment's tests", "One upgrade for all; all environments retest"],
         ["Token key set", "SRS points at that environment's Okta key set", "One key set; every environment's tokens come from the same server"],
-        ["Cost", "Small: 1 pod in DEV, SIT, UAT; 3 in PERF, PREPROD, PROD [R14]", "Slightly smaller"],
+        ["Cost", "Small: 2 pods in DEV, SIT, UAT (chart minimum [R24]); 3 in PERF, PREPROD, PROD [R14, R24]", "Slightly smaller"],
     ], caption="SRS per environment compared with a shared SRS", widths=[3.4, 6.6, 6.6], size=9)
     b.p("Give each SRS its own OpenSearch user, mapped to a role limited to its index pattern [R40, R41]. Pega says the manage "
         "cluster privilege is optional when the cluster settings are applied manually [R14]. Pega does not say whether SRS "
@@ -112,7 +130,7 @@ def s7_search(b):
         - "<index action group confirmed in DEV, for example indices_all>"
 """, title="Index-scoped role for one environment's SRS user (OpenSearch roles.yml format [R40, R41])")
     b.p("When an environment is refreshed or retired, delete its indexes with `DELETE /pega26-<code>*` as the environment's own "
-        "SRS user, which cannot touch any other environment's indexes (Sections 17.4 and 17.5).")
+        "SRS user, which cannot touch any other environment's indexes (Sections 19.3 and 19.4).")
     b.h2("Pega-to-SRS tokens with Okta")
     b.p("Pega obtains a token with the OAuth client credentials grant, authenticating with `private_key_jwt` or "
         "`client_secret_basic`, and asks for the scope `pega.search:full` [R16, R23]. SRS checks the token signature with the "
@@ -168,7 +186,14 @@ app.clientId == "<ppd-client-id>"  ? "pega26-ppd"  : "none\"""", title="Claim va
         "Pega pods call the Okta token endpoint, and SRS pods fetch the Okta key set. Both go to `<okta-domain>` on port 443 through the hub firewall. Add an FQDN allow rule for `<okta-domain>` from the Pega and SRS subnets only.",
         "Token lifetime is set in the access policy rule of the authorization server [R42]. Use the same lifetime in all environments and record it in Appendix A. Pega requests a new token when needed; measure how often in DEV by counting token requests in the Okta system log.",
         "Pega does not state whether SRS checks the issuer or audience. Test it in DEV with a token from another authorization server (FS-12) and record the result.",
-        "Rotate the client key by adding a second public key to the application, updating `SRS_OAUTH_PRIVATE_KEY` in Key Vault, restarting the Pega tiers, checking search, and then removing the old public key. Okta signing key rotation is handled by Okta; SRS reads the current key set from the key set URL.",
+        "Rotate the client key by adding a second public key to the application, updating `SRS_OAUTH_PRIVATE_KEY` in Key Vault, restarting the Pega tiers, checking search, and then removing the old public key. Pega does not state whether its client assertion carries a key ID (`kid`) header; test the rotation in DEV with both public keys registered (FS-34).",
+    ])
+    b.h3("Okta signing key rotation and rate limits")
+    b.bullets([
+        "**Signing keys.** Okta rotates the signing keys of an authorization server about four times a year, and clients must look the key up from the key set URL by its `kid` rather than keep a fixed copy [R53]. SRS must therefore read `OAuthPublicKeyURL` dynamically. Prove it in DEV by rotating the authorization server's keys manually, as Okta allows, and checking that search continues without an SRS restart (FS-33). If the test fails, rotation becomes a planned event with an SRS restart, and the authorization server's key rotation mode is set to manual.",
+        "**Rate limits.** Okta applies rate limits per org and per endpoint. A request over the limit receives HTTP 429, and Okta writes warning and violation events to the System Log [R52]. All six environments share the customer's Okta org, so every non-production token request draws on the same limit as production. The key set and discovery endpoints are not the concern; the token endpoint is.",
+        "Measure token requests per minute per environment in DEV and under load in PERF (from the System Log), then compare the sum across all environments with the org's published limit for the token endpoint. Keep the token lifetime long enough that Pega does not request a token on each call.",
+        "Forward Okta System Log rate-limit warnings and violations to the monitoring service (Section 18.5). A warning means another application in the org, or a misbehaving environment, is close to blocking search for every environment.",
     ])
     b.h2("SRS deployment (backingservices chart)")
     b.p("Each environment has its own SRS release in namespace `srs-<code>`. The keys come from the SRS chart README [R24].")
@@ -180,8 +205,20 @@ srs:
   enabled: true
   deploymentName: "srs-<code>"
   srsRuntime:
-    replicaCount: <1 in DEV, SIT, UAT; 3 in PERF, PREPROD, PROD>
+    replicaCount: <2 in DEV, SIT, UAT; 3 in PERF, PREPROD, PROD>
     srsImage: "<acr-name>.azurecr.io/platform-services/search-n-reporting-service-os:<tag>"
+    resources:
+      requests: { cpu: 1, memory: "4Gi" }
+      limits: { cpu: 2, memory: "4Gi" }
+    affinity:
+      podAntiAffinity:
+        preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              topologyKey: topology.kubernetes.io/zone
+              labelSelector:
+                matchLabels:
+                  app.kubernetes.io/name: srs-service
     env:
       AuthEnabled: true
       OAuthPublicKeyURL: "<okta-jwks-url>"
@@ -201,13 +238,25 @@ srs:
     port: <search-port>
     protocol: https
     tls:
-      enabled: true
+      enabled: false
     basicAuthentication:
       enabled: true
     authSecret: "srs-search-credentials"
     requireInternetAccess: false
     networkPolicy:
-      enabled: true""", title="backingservices values for one environment (complete files in Appendix B)")
+      enabled: false""", title="backingservices values for one environment (complete files in Appendix B)")
+    b.h3("Three chart behaviours that break this design if left at the defaults")
+    b.p("These were found by rendering the values files with `helm template` against chart 4.13.0, not from the README alone.")
+    b.table(["Key", "What the chart does", "Effect", "Setting in this design"], [
+        ["`srsStorage.tls.enabled`", "Means TLS certificate authentication to the search service, not encryption [R24]. The chart refuses to render when it is combined with `basicAuthentication.enabled` (\"Only one authentication can be enabled\")", "Helm install fails", "`false`. Encryption comes from `protocol: https`; the SRS user authenticates with basic authentication"],
+        ["`pegasearch.externalURL`", "With `srsRuntime.ssl.enabled: true`, the SRS container serves HTTPS on 8443 only, and its probes call `https://localhost:8443/health`. The Service also exposes 8080 and 80, which point at a port that is not listening [R62]", "An HTTPS URL without a port goes to 443, which the Service does not expose; search fails at first start", "`https://srs-<code>.srs-<code>.svc.cluster.local:8443`"],
+        ["`srsStorage.networkPolicy.enabled`", "Allows ingress to SRS from `0.0.0.0/0` on 8080 and 8443, and egress only to an in-cluster `elasticsearch-master` on 9200 and DNS [R62]. `requireInternetAccess` only adds a pod label", "SRS cannot reach the external OpenSearch service or the Okta key set; any pod can call SRS", "`false`, replaced by the policy below"],
+    ], caption="SRS chart behaviours found by rendering", widths=[3.4, 6.2, 3.6, 3.4], size=8, label="srs_traps")
+    b.code(V.srs_netpol("<code>"), title="Network policies for srs-<code>, replacing the chart policy")
+    b.p("The policy allows SRS to be called only from `pega-<code>` on 8443, and lets SRS reach DNS, the OpenSearch private "
+        "endpoint and public HTTPS. Okta has no fixed address range, so the last rule is limited to public addresses on 443, "
+        "and the hub firewall restricts it to `<okta-domain>` by FQDN. Kubernetes network policies are enforced only if the "
+        "AKS cluster was created with a network policy engine; check this before relying on them.")
     b.h2("Index build planning")
     b.p("After Pega connects to SRS, SRS indexes all searchable data, and Pega states that this needs a downtime period. The "
         "length depends on the data model, the resources given to Pega and SRS, the number of queue processors and the amount "

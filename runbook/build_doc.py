@@ -13,13 +13,15 @@ import content_d as D
 import content_e as E
 import content_f as F
 import content_g as G
+import content_h as H
+import sizing_calc
 
 HERE = Path(__file__).resolve().parent
 OUT = HERE / "out"
 NAME = "Pega_26_AKS_Kafka_Search_Runbook"
-META = {"version": "2.0", "status": "Issued for customer review and approval", "date": "1 October 2026"}
+META = {"version": "2.1", "status": "Issued for customer review and approval", "date": "2 October 2026"}
 TITLE = "Pega Platform 26.1.1 on Azure AKS: Externalized Kafka and Search Runbook"
-SHORT = "Pega 26.1.1 on Azure AKS | Kafka and Search Runbook | v2.0"
+SHORT = "Pega 26.1.1 on Azure AKS | Kafka and Search Runbook | v2.1"
 TOC_LEVELS = 2
 
 SECTIONS = [
@@ -27,8 +29,8 @@ SECTIONS = [
     B.s5_shared, B.s6_kafka,
     C.s7_search, C.s8_secrets,
     D.s9_helm, D.s10_clone, D.s11_migration,
-    E.s12_deploy, E.s13_cutover, E.s14_testing,
-    F.s15_issues, F.s16_troubleshooting, F.s17_ops, F.s18_risks,
+    E.s12_deploy, E.s13_cutover, E.s14_testing, H.s15_perf,
+    F.s16_issues, F.s17_troubleshooting, H.s18_observability, F.s19_ops, F.s20_risks,
 ]
 
 
@@ -74,6 +76,7 @@ def find_pages(page_texts, items):
 
 def main():
     OUT.mkdir(exist_ok=True)
+    sizing_calc.write(OUT / "Pega_26_Sizing_Calculator.xlsx")
     docx = OUT / f"{NAME}.docx"
     probe = build({}, {}, [], [], [])
     labels = probe.labels

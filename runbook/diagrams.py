@@ -540,7 +540,7 @@ def observability():
     body = f'''
   rankdir=LR; nodesep=0.16; ranksep=0.7;
   subgraph cluster_src {{ label="Sources (every signal carries the environment code)"; style="dashed,rounded"; color="{GREY}"; fontsize=10;
-    pega [label="Pega web and batch pods\\nPegaRULES, ALERT and GC logs\\nto stdout", fillcolor="{PEGA}"];
+    pega [label="Pega web and batch pods\\nPegaRULES and ALERT logs to stdout\\nGC log file tailed by the agent", fillcolor="{PEGA}"];
     pdcag [label="Pega health, alerts\\nand exceptions", fillcolor="{PEGA}"];
     srs [label="SRS pods\\nlogs to stdout", fillcolor="{BACK}"];
     aks [label="AKS nodes, pods, HPA\\nand control plane", fillcolor="{AZ}"];

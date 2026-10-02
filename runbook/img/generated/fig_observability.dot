@@ -7,7 +7,7 @@ digraph G {
 
   rankdir=LR; nodesep=0.16; ranksep=0.7;
   subgraph cluster_src { label="Sources (every signal carries the environment code)"; style="dashed,rounded"; color="#595959"; fontsize=10;
-    pega [label="Pega web and batch pods\nPegaRULES, ALERT and GC logs\nto stdout", fillcolor="#DCE6F2"];
+    pega [label="Pega web and batch pods\nPegaRULES and ALERT logs to stdout\nGC log file tailed by the agent", fillcolor="#DCE6F2"];
     pdcag [label="Pega health, alerts\nand exceptions", fillcolor="#DCE6F2"];
     srs [label="SRS pods\nlogs to stdout", fillcolor="#E4DFEC"];
     aks [label="AKS nodes, pods, HPA\nand control plane", fillcolor="#F2F2F2"];

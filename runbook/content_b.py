@@ -39,6 +39,9 @@ def s5_shared(b):
         ["Network", "Firewall allow-list per environment; Kubernetes network policies deny by default", "A cloned environment reaching production Kafka, production OpenSearch or production integrations", "IT-09, IT-10"],
         ["Cloned data", "Application Kafka data sets and other endpoints repointed or disabled before the batch tier starts (Section 10.4)", "Test environments consuming production topics or calling production systems", "IT-10, FS-27"],
     ], caption="Isolation controls by layer", widths=[2.6, 6.4, 4.4, 3.2], size=8.5, label="isolation")
+    b.p("{ref:fig_layers} shows the same controls as layers. A request from one environment has to pass every layer to reach "
+        "another environment's data, so a single misconfiguration does not expose it.")
+    b.figure(GEN + "fig_isolation_layers.png", "Isolation layers between environments on shared services", OWN, width_cm=14, label="layers")
     b.callout("caution", ["Wildcard ACLs are forbidden on a shared cluster. Pega's ACL list includes TRANSACTIONAL_ID `*` "
               "[R11], which every environment needs. That ACL does not give access to topics or groups, but it means "
               "transactional IDs are not separated by environment. Record this as an accepted residual risk (RK-07).",
@@ -122,17 +125,39 @@ def s6_kafka(b):
         ["Ingress MBps", "5", "25", "60", "60"],
         ["Egress MBps", "15", "75", "180", "180"],
         ["Partitions (before replication)", "30", "250", "3,000", "4,500"],
+        ["Client connections", "", "", "18,000", "18,000"],
+        ["Connection attempts per second", "", "", "500", "500"],
+        ["Requests per second", "", "", "7,500", "15,000"],
+        ["Partition creations and deletions per 5 minutes (cluster)", "", "", "500", "5,000"],
+        ["Maximum message size", "", "", "20 MB", "20 MB"],
         ["Private networking", "No", "No", "Yes (Private Link)", "Yes (Private Link or VNet peering)"],
         ["Client quotas [R36]", "No", "No", "Yes", "Yes"],
-    ], widths=[4.6, 2.6, 2.6, 3.2, 3.6], caption="Confluent Cloud cluster limits relevant to Pega (source [R31])", size=9, label="cc_limits")
+    ], widths=[4.6, 2.6, 2.6, 3.2, 3.6], caption="Confluent Cloud cluster limits relevant to Pega (source [R31]; Basic and Standard rows for connections and requests are not used here)", size=9, label="cc_limits")
+    b.callout("important", ["Confluent now enforces the connection and request limits on Enterprise clusters rather than "
+              "treating them as guidance: request limits from March 2026 and connection limits from June 2026 [R31]. A client "
+              "over a limit is throttled, and the Metrics API reports the throttling per principal with the limit that was hit "
+              "[R56].",
+              "Pega pods open many Kafka connections: one set per producer, per queue-processor consumer thread and for cluster "
+              "messaging. A rolling restart of a large tier, or every environment in a group starting at once after a refresh, "
+              "can reach the connection-attempt limit. Measure connections per pod in DEV (Section 15.8), stagger restarts in "
+              "shared groups, and alert on throttling (Section 18.5)."])
+    b.callout("caution", "Partition creation and deletion are paced at 500 per five minutes per cluster on Enterprise [R31]. "
+              "The first start of an environment creates every Pega topic, and a refresh deletes them all. With several hundred "
+              "partitions per environment, both can take tens of minutes and slow every other environment on the cluster that "
+              "creates topics at the same time. Include this time in the rehearsal measurements and never refresh two "
+              "environments in a group at once.")
     b.figure(GEN + "fig_decision_confluent.png", "Decision: Confluent Cloud cluster type", OWN, width_cm=11.5)
     b.table(["Group", "Recommended type", "Reason"], [
         ["NP1 (DEV, SIT, UAT)", "Enterprise with Private Link", "Holds masked production data; quotas available; elastic capacity suits uneven test load"],
         ["NP2 (PERF, PREPROD)", "Same type as PROD", "Load tests and rehearsals must show production behaviour"],
         ["PROD", "Enterprise with Private Link, or Dedicated if measured partitions or throughput exceed Enterprise limits, or VNet peering is required", "Decided after the first PERF measurement (OD-02)"],
     ], caption="Cluster type by group", widths=[3.6, 5.6, 7.4], size=9)
-    b.callout("caution", "Enterprise clusters that use Private Link on Azure are limited to 32 eCKU [R31]. Add up the measured "
-              "partitions of every environment in the group before confirming Enterprise.")
+    b.callout("caution", ["Enterprise clusters that use Private Link on Azure are limited to 32 eCKU [R31]. Add up the measured "
+              "partitions of every environment in the group before confirming Enterprise.",
+              "The 99.99 % uptime SLA applies to Enterprise clusters of at least 2 eCKU, and to Dedicated clusters only when they "
+              "are created multi-zone, which needs at least 2 CKU and cannot be changed later [R31]. Set the minimum capacity of "
+              "cc-np2 and cc-prd to 2 units. Enterprise scales quickly up to 10 eCKU and more slowly above that, so do not rely on "
+              "elastic scaling to absorb a cutover peak above 10 eCKU; raise the minimum before the event."])
     b.h2("Private networking")
     b.p("Azure Private Link gives one-way private access from the customer VNet to Confluent Cloud. Confluent's Azure steps are: "
         "create the Confluent network, add a Private Link access for the customer subscription, create one private endpoint per "
@@ -178,7 +203,7 @@ confluent kafka acl create --allow --service-account <sa-id> \\
 confluent api-key create --resource <lkc-id> --service-account <sa-id>
 confluent kafka acl list --service-account <sa-id> --cluster <lkc-id>""", title="Creating and listing one environment's service account and ACLs")
     b.p("To remove an environment's access, delete its ACLs with `confluent kafka acl delete` using the same flags, delete its "
-        "API keys, then delete the service account (Section 17.5).")
+        "API keys, then delete the service account (Section 19.4).")
     b.h2("Topic design")
     b.table(["Setting", "Value", "Reason"], [
         ["streamNamePattern", "`pega-<code>-{stream.name}`", "Separates environments on a shared cluster. Chart default is `pega-{stream.name}` [R23]."],
@@ -189,10 +214,21 @@ confluent kafka acl list --service-account <sa-id> --cluster <lkc-id>""", title=
         ["Cluster messaging topics after Hazelcast removal", "Covered by the prefixed ACL if Pega applies the pattern to them", "Pega names five topics in the Hazelcast removal prerequisites [R6] but does not say whether the pattern applies. List the topics after the first DEV start and add literal ACLs for any outside the prefix (FS-04)."],
     ], caption="Topic design settings", widths=[3.6, 4.6, 8.4], size=9)
     b.p("When an environment is refreshed from a new clone, keep its prefix and delete its old topics and consumer groups "
-        "before the first start (Section 17.4). Keeping the prefix keeps ACLs, quotas and dashboards unchanged. A new prefix "
+        "before the first start (Section 19.3). Keeping the prefix keeps ACLs, quotas and dashboards unchanged. A new prefix "
         "is only needed if old topics cannot be deleted, for example during an investigation; in that case create a new "
         "prefix such as `pega-sit2-` with its own ACLs.")
     b.h2("Partition budget")
+    b.p("Since Pega 8.7, each new stream topic is created with 6 partitions by default. The default is set by the DSS "
+        "`prconfig/dsm/services/stream/pyTopicPartitionsCount/default` in ruleset Pega-Engine, and applies only to topics "
+        "created after the change [R49]. On a queue processor rule, threads beyond the topic's partition count do no work, "
+        "because one partition is read by one consumer at a time [R50]. Two rules follow:")
+    b.bullets([
+        "**Expected partitions per environment** = (number of Pega topics x partitions per topic), counted at replication factor 1. For example, with the default of 6, 150 topics give 900 partitions, close to the 1,000 that Pega's production sizing names [R11].",
+        "**Effective consumers per queue processor** = min(partitions, batch pods x threads per node). Adding batch pods beyond the partition count does not speed up a queue processor; raise its partition count first, and only for the queue processors that the load test shows as the bottleneck.",
+    ])
+    b.callout("caution", "A database cloned from 8.8 may carry a changed `pyTopicPartitionsCount` DSS or per-topic overrides "
+              "from tuning on 8.8 (CD-15). Record the value at time point A. If it differs from 6, decide with the performance "
+              "lead whether to keep it, because it multiplies the partition count of every topic created at first start.")
     b.p("Partitions drive both Confluent cost and limits. Measure them instead of estimating:")
     b.steps([
         "After the first full start of each environment, count partitions under its prefix (command K-5).",
@@ -225,3 +261,8 @@ confluent kafka acl list --service-account <sa-id> --cluster <lkc-id>""", title=
         "`custom.jvm.args` of prpcUtils.properties for '25 and '26 [R8]. Pipelines that run prpcUtils against an upgraded "
         "environment must pass that environment's bootstrap server, prefix and JAAS value, generated at run time from Key "
         "Vault and deleted after the run.")
+    b.callout("important", "The installer job that runs the upgrade (run U) is built from the same Pega command-line "
+              "tooling, but chart 4.13.0 passes it no stream settings: a rendered run U contains no `STREAM_*` values. Whether "
+              "the 26.1.1 upgrade of an 8.8 database needs Kafka is therefore an open question for Pega Support (GQ-08). Until it "
+              "is answered, allow the installer pod to reach the environment's Confluent endpoint and watch the installer log "
+              "for Kafka connection attempts in the first DEV upgrade.")

@@ -26,7 +26,7 @@ def main():
     headings = {}
     for p in doc.paragraphs:
         if p.style.name.startswith("Heading"):
-            m = re.match(r"(?:Appendix )?([A-G]|\d+)((?:\.\d+)*)\.?\s+(.*)", p.text)
+            m = re.match(r"(?:Appendix )?([A-H]|\d+)((?:\.\d+)*)\.?\s+(.*)", p.text)
             if m:
                 headings[m.group(1) + m.group(2)] = m.group(3)
     body = [t for s, t in texts(doc) if not s.startswith("TOC")]
@@ -36,7 +36,7 @@ def main():
         for m in re.finditer(r"\bSections? ((?:\d+(?:\.\d+)*)(?:(?:, | and | to )\d+(?:\.\d+)*)*)", t):
             for n in re.findall(r"\d+(?:\.\d+)*", m.group(1)):
                 refs[n] += 1
-        for n in re.findall(r"\bAppendi(?:x|ces) ([A-G])\b", t):
+        for n in re.findall(r"\bAppendi(?:x|ces) ([A-H])\b", t):
             refs[n] += 1
     for n in sorted(refs, key=lambda x: [int(i) if i.isdigit() else ord(i) for i in x.split(".")]):
         title = headings.get(n)

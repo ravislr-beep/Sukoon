@@ -1,9 +1,10 @@
-"""Appendices A to G."""
+"""Appendices A to H (Appendix H content is in content_h)."""
 from docx.shared import Pt
 
 from docx_lib import add_hyperlink
 import envs as E
 import values_gen as V
+import content_h as H
 
 
 def _per_env(label, fn):
@@ -47,7 +48,7 @@ def app_a_inventory(b):
         ["OpenSearch provider and version", "OD-03; Section 7.2", "", "", ""],
         ["OpenSearch endpoint (`<search-host>`) and port", "`srs.srsStorage.domain`, `port`", "", "", ""],
         ["OpenSearch data nodes, storage and shards", "Section 7.4", "", "", ""],
-        ["Disk watermarks (low, high, flood stage)", "Section 7.4; Section 17.1", "", "", ""],
+        ["Disk watermarks (low, high, flood stage)", "Section 7.4; Section 18.5", "", "", ""],
         ["Okta authorization server ID (`<auth-server-id>`)", "Token URL", "", "", ""],
         ["Token endpoint and JWKS URL (`<okta-jwks-url>`)", "`pegasearch.srsAuth.url`; `OAuthPublicKeyURL`", "", "", ""],
         ["Access token lifetime", "Okta access policy rule", "", "", ""],
@@ -77,7 +78,8 @@ def app_b_values(b):
         "SIT stands for the NP1 environments and PROD for PROD; the other environments differ only in the code, the names in "
         "{ref:tab_names} and the replica counts. Values in angle brackets come from Appendix A. No secret is written in these "
         "files: each `external_secret_name` and `authSecret` names a Kubernetes secret created by the External Secrets "
-        "Operator (Section 8.2). Render every file with `helm template` and review the output before use.")
+        "Operator (Section 8.2). Render every file with `helm template` and review the output before use. Every file below "
+        "was rendered with `helm template` against charts 4.13.0 without errors before this version was issued.")
     files = V.all_files()
     for code, name in (("sit", "SIT"), ("prd", "PROD")):
         for run, desc in V.RUNS.items():
@@ -85,6 +87,8 @@ def app_b_values(b):
             b.code(files[f"pega-{code}-{run}.yaml"], title=f"pega-{code}-{run}.yaml. {desc}.")
         b.h2(f"{name}: backingservices chart (SRS)")
         b.code(files[f"backingservices-{code}.yaml"], title=f"backingservices-{code}.yaml")
+        b.h2(f"{name}: network policies for SRS")
+        b.code(files[f"netpol-srs-{code}.yaml"], title=f"netpol-srs-{code}.yaml (applied with `kubectl apply`, Section 7.7)")
 
 
 def app_c_commands(b):
@@ -155,16 +159,20 @@ curl -s -u "$OS_ADMIN:$OS_ADMIN_PASSWORD" \\
 curl -s -u "$OS_USER:$OS_PASSWORD" "https://<search-host>/_cat/indices/pega26-<code>*?v"
 
 # S-5 SRS from the Pega namespace: refused without a token, accepted with one
-SRS=https://srs-<code>.srs-<code>.svc.cluster.local
-curl -s -o /dev/null -w "%{http_code}\\n" "$SRS/"
-curl -s -o /dev/null -w "%{http_code}\\n" -H "Authorization: Bearer $TOKEN" "$SRS/"
+SRS=https://srs-<code>.srs-<code>.svc.cluster.local:8443
+curl -s --cacert srs-ca.crt "$SRS/health"
+curl -s --cacert srs-ca.crt -o /dev/null -w "%{http_code}\\n" "$SRS/"
+curl -s --cacert srs-ca.crt -o /dev/null -w "%{http_code}\\n" \\
+  -H "Authorization: Bearer $TOKEN" "$SRS/"
 
 # S-6 Delete the environment's indexes (refresh or retirement, as the SRS user)
 curl -s -u "$OS_USER:$OS_PASSWORD" \\
   "https://<search-host>/_cat/indices/pega26-<code>*?h=index"
 curl -s -u "$OS_USER:$OS_PASSWORD" -X DELETE "https://<search-host>/pega26-<code>*"''', title="Search commands S-1 to S-6")
-    b.p("For S-5, the first call must return 401. The second call must not return 401 or 403; the exact code depends on "
-        "the path, which is not part of the check. S-6 relies on `destructive_requires_name` being false (OS-2) and on the "
+    b.p("For S-5, `srs-ca.crt` is the customer private CA that signed the SRS server certificate. The health call is the "
+        "same one the SRS readiness probe makes, and must return a healthy status. The call without a token must return "
+        "401. The call with a token must not return 401 or 403; the exact code depends on the path, which is not part of "
+        "the check. S-6 relies on `destructive_requires_name` being false (OS-2) and on the "
         "index-scoped role, which limits the delete to this environment's indexes.")
     b.h2("Okta tokens")
     b.p("O-1 builds the signed client assertion that `private_key_jwt` needs and requests a token, as Pega does [R43, R45]. "
@@ -253,7 +261,7 @@ def app_d_templates(b):
     ], caption="Evidence pack items", widths=[3.6, 9.6, 3.4], size=8.5)
     b.h2("Clean-up record")
     b.table(["CD item", "Found in the clone", "Action taken", "Done by and time", "Check"], [
-        [f"CD-{i:02d}", "", "", "", ""] for i in range(1, 15)
+        [f"CD-{i:02d}", "", "", "", ""] for i in range(1, 17)
     ], caption="Clean-up record (one per clone)", widths=[1.8, 4, 4.6, 3, 3.2], size=8.5, zebra=False)
     b.h2("Check record")
     _form(b, "Check record", ["Check or scenario ID", "Environment and occasion", "Run by and date", "Command or screen",
@@ -370,3 +378,4 @@ def appendices(b):
     app_e_glossary(b)
     app_f_references(b)
     app_g_images(b)
+    H.app_h_calculator(b)

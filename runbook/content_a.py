@@ -66,8 +66,8 @@ def document_control(b, meta):
         ["Version", meta["version"]],
         ["Status", meta["status"]],
         ["Issue date", meta["date"]],
-        ["Evidence cut-off", "Vendor pages were read between 28 September and 1 October 2026. Section 3 lists the facts used. Appendix F lists every source with its link."],
-        ["Supersedes", "Version 1.0 of this runbook, which assumed a three-release path through an intermediate Pega release. The customer has since confirmed a clone-and-upgrade path (Section 1.2), so this version replaces it in full."],
+        ["Evidence cut-off", "Vendor pages were read between 28 September and 2 October 2026. Section 3 lists the facts used. Appendix F lists every source with its link."],
+        ["Supersedes", "Version 2.0 of this runbook, issued on 1 October 2026. Version 2.0 itself replaced version 1.0, which assumed a three-release path through an intermediate Pega release before the customer confirmed the clone-and-upgrade path (Section 1.2)."],
         ["Owner", "Customer platform engineering lead"],
         ["Review cycle", "Before each rehearsal, before the production cutover, and after any change to a vendor page listed in Section 3"],
     ], widths=[3.5, 13], first_col_bold=True, size=9.5)
@@ -76,7 +76,8 @@ def document_control(b, meta):
     p.add_run("Revision history")
     b.table(["Version", "Date", "Change", "Author"], [
         ["1.0", "1 October 2026", "Kafka and search runbook for a three-release upgrade path.", "Implementation team"],
-        ["2.0", meta["date"], "Rewritten for the clone-and-upgrade path, six environments, shared non-production services, managed OpenSearch and Okta.", "Implementation team"],
+        ["2.0", "1 October 2026", "Rewritten for the clone-and-upgrade path, six environments, shared non-production services, managed OpenSearch and Okta.", "Implementation team"],
+        ["2.1", meta["date"], "Expert review: Helm values corrected after rendering with `helm template` (SRS authentication, SRS port 8443, SRS network policy, SRS replicas and resources); availability zone design; Confluent connection, request and partition-creation limits; Okta key rotation and rate limits; OpenSearch sizing formulas; JVM settings; new Sections 15 (performance engineering and sizing) and 18 (observability); environment build waves; Appendix H sizing calculator. Sections 15 to 18 of version 2.0 are now Sections 16, 17, 19 and 20.", "Implementation team"],
     ], widths=[2, 2.8, 8.8, 3])
     p = b.doc.add_paragraph(style="Front Heading")
     p.paragraph_format.space_before = Pt(14)
@@ -135,7 +136,7 @@ def s1_exec(b):
               "held in the database, such as delayed and broken items, travel with the clone and are handled as listed in "
               "Section 10.3. Application Kafka data sets on the customer's own Kafka clusters are decided one by one (Section 11.3)."])
     b.h2("Questions for Pega Support")
-    b.p("Pega documentation does not settle three points that the plan depends on. Section 10.1 lists seven questions in "
+    b.p("Pega documentation does not settle three points that the plan depends on. Section 10.1 lists eight questions in "
         "full. The three that gate the production plan are these:")
     b.bullets([
         "GQ-01: Pega Support must confirm that a direct upgrade of an 8.8 database to 26.1.1 is supported, and name any required 8.8 patch level.",
@@ -143,7 +144,7 @@ def s1_exec(b):
         "GQ-04: Pega Support must confirm the installer upgrade type for a cloned database (`in-place` or the out-of-place types the Helm chart documents [R23]).",
     ])
     b.h2("Decisions needed")
-    b.p("{ref:tab_exec_decisions} lists the decisions that block the first build. Section 18.2 lists all open decisions with "
+    b.p("{ref:tab_exec_decisions} lists the decisions that block the first build. Section 20.2 lists all open decisions with "
         "owners and milestones.")
     b.table(["ID", "Decision", "Recommended answer", "Needed by"], [
         ["OD-01", "Pega Support answers to the gating questions", "Raise the case now; plan with the conservative answer until the reply arrives", "M2 DEV build"],
@@ -156,7 +157,7 @@ def s1_exec(b):
     b.p("This document is ready for customer review as a design and runbook. Durations for draining, cloning, upgrading and "
         "index building depend on data volume, so they come from the rehearsals in Section 14.2, not from estimates. Points that "
         "no source settles are marked as tests, Pega Support questions or open decisions. Conflicts between sources are logged "
-        "in Section 18.4.")
+        "in Section 20.4.")
 
 
 def s2_scope(b):
@@ -198,7 +199,7 @@ def s2_scope(b):
         ["Pega Support answers", "Not received", "Every gating question is open with an owner and a milestone (Section 10.1)."],
     ], caption="Confirmed customer inputs", widths=[3.4, 4.6, 8.6], size=9)
     b.h2("Where each question is answered")
-    b.p("The customer asked thirteen questions. {ref:tab_trace} shows where each one is answered, so a reviewer can check "
+    b.p("The customer asked eighteen questions. {ref:tab_trace} shows where each one is answered, so a reviewer can check "
         "that none is missed.")
     b.table(["#", "Question", "Answered in"], [
         ["1", "Is the direct clone-and-upgrade path from 8.8 to 26.1.1 supported, and on what conditions?", "Section 10.1"],
@@ -212,21 +213,27 @@ def s2_scope(b):
         ["9", "How much does sharing save, and what risk does it add?", "Section 5.5"],
         ["10", "How is it tested?", "Section 14"],
         ["11", "Which failures are tested, and how?", "Section 14.6"],
-        ["12", "What known issues should be avoided?", "Section 15"],
-        ["13", "How is it run day to day, including refresh and retirement?", "Section 17"],
+        ["12", "What known issues should be avoided?", "Section 16"],
+        ["13", "How is it run day to day, including refresh and retirement?", "Section 19"],
+        ["14", "Why is performance testing needed, and how is it done?", "Section 15"],
+        ["15", "How is each layer sized, and is there a calculator?", "Sections 15.7 to 15.9 and Appendix H"],
+        ["16", "How is the platform monitored, logged and observed?", "Section 18"],
+        ["17", "In which order are the environments built, and what is configured in each one?", "Section 12.10"],
+        ["18", "What happens when an availability zone fails?", "Section 4.6"],
     ], caption="Traceability from customer questions to sections", widths=[0.8, 11.6, 4.2], size=9, label="trace")
     b.h2("Reading guide by role")
     b.table(["Reader", "Read first", "Then"], [
-        ["Business owner, programme manager", "Sections 1, 5.5, 13 and 18", "Section 14.2"],
-        ["Enterprise and security architects", "Sections 4, 5, 7.6 and 8", "Section 18"],
-        ["Pega Lead System Architect", "Sections 10 and 11", "Sections 13 to 15"],
+        ["Business owner, programme manager", "Sections 1, 5.5, 13 and 20", "Sections 14.2 and 15.1"],
+        ["Enterprise and security architects", "Sections 4, 5, 7.6 and 8", "Sections 18 and 20"],
+        ["Pega Lead System Architect", "Sections 10 and 11", "Sections 13 to 16"],
         ["Database administrators", "Sections 10.1, 10.3 to 10.5 and 12.7", "Section 13"],
-        ["Platform, Kafka and search engineers", "Sections 6 to 9 and 12", "Sections 16, 17, Appendices A to C"],
-        ["Test lead", "Section 14", "Section 15"],
+        ["Platform, Kafka and search engineers", "Sections 6 to 9 and 12", "Sections 15, 17, 18 and 19, Appendices A to C and H"],
+        ["Test lead, performance lead", "Sections 14 and 15", "Section 16"],
+        ["Operations and monitoring teams", "Section 18", "Sections 17 and 19"],
     ], caption="Reading guide by role", widths=[5, 6.5, 5.1], size=9.5)
     b.h2("Conventions and naming")
     b.bullets([
-        "**Must** marks a vendor requirement or a fixed decision. **Should** marks a recommendation that the customer can change through the decision process in Section 18.2.",
+        "**Must** marks a vendor requirement or a fixed decision. **Should** marks a recommendation that the customer can change through the decision process in Section 20.2.",
         "Values in angle brackets, such as `<bootstrap-host>`, are environment-specific. Each one is listed in Appendix A.",
         "References in square brackets, such as [R11], point to the numbered sources in Appendix F.",
         "Figures marked \"Prepared for this implementation\" were drawn for this document. Figures from Pega, Pega Academy, Confluent and OpenSearch carry a source line, and Appendix G lists them.",
@@ -252,7 +259,7 @@ def s3_evidence(b):
         "Okta developer documentation.",
         "Microsoft Learn and the External Secrets Operator documentation.",
     ])
-    b.p("Where two sources disagree, the higher one is followed and the conflict is logged in Section 18.4. Where no source "
+    b.p("Where two sources disagree, the higher one is followed and the conflict is logged in Section 20.4. Where no source "
         "settles a point, the document says so and turns it into a test, a Pega Support question or an open decision.")
     b.h2("Facts this design depends on")
     b.p("{ref:tab_facts} records the facts as published on the evidence cut-off date. Re-check them before each rehearsal, "
@@ -279,6 +286,10 @@ def s3_evidence(b):
         ["Installer actions", "`install`, `deploy`, `install-deploy`, `upgrade`, `upgrade-deploy`. Upgrade types include `in-place`, `out-of-place-rules`, `out-of-place-data`, `zero-downtime`, `custom`.", "[R23]"],
         ["Confluent quotas", "Client quotas are supported on Enterprise, Freight and Dedicated clusters, applied per service account or identity pool, not per API key.", "[R36]"],
         ["Okta", "Custom scopes and custom claims need a custom authorization server. The org authorization server cannot be customized.", "[R42, R43, R44]"],
+        ["Okta keys and limits", "Authorization server signing keys rotate about four times a year; clients look keys up by `kid`. Rate limits apply per org; excess requests receive HTTP 429.", "[R52, R53]"],
+        ["Confluent limits", "Per Enterprise eCKU: 18,000 connections, 500 connection attempts per second, 7,500 requests per second; partition creation and deletion 500 per five minutes per cluster; limits enforced from 2026. 99.99 % SLA from 2 eCKU.", "[R31]"],
+        ["Pega partitions", "New stream topics get 6 partitions by default (DSS `pyTopicPartitionsCount`); queue processor threads beyond the partition count do no work.", "[R49, R50]"],
+        ["SRS chart", "`srsStorage.tls` is certificate authentication and cannot be combined with basic authentication; minimum 2 SRS replicas, 3 as best practice.", "[R24]"],
     ], caption="Version and support facts used in this design", widths=[2.8, 12, 1.8], size=8.5, label="facts")
 
 
@@ -333,7 +344,7 @@ def s4_arch(b):
     b.figure(GEN + "fig_network_dns.png", "Name resolution and traffic paths for Kafka, OpenSearch and Okta", OWN, width_cm=12.5, label="dns")
     b.table(["From", "To", "Port", "Protocol", "Purpose"], [
         ["Pega pods (web, batch)", "Confluent private endpoints", "9092", "SASL_SSL", "Stream service [R32]"],
-        ["Pega pods", "SRS service in srs-<env>", "SRS service port", "HTTPS with bearer token", "Indexing and search"],
+        ["Pega pods", "SRS service in srs-<env>", "8443", "HTTPS with bearer token", "Indexing and search (Section 7.7)"],
         ["SRS pods", "OpenSearch private endpoint", "443 or the provider port", "HTTPS", "Index storage and queries"],
         ["Pega pods and installer job", "Database private endpoint", "Engine port", "TLS", "Rules and data"],
         ["Pega pods", "Okta `<okta-domain>`", "443", "HTTPS through the firewall", "Token request"],
@@ -351,3 +362,21 @@ def s4_arch(b):
     b.callout("note", "Pega '26 moves queue processing to a partitioned, multi-threaded model [R3]. The number of partitions per "
               "topic therefore limits how many batch threads can work on one queue processor at once. Measure partitions after the "
               "first start (Section 6.7) rather than estimating them.")
+    b.h2("Availability zone resilience")
+    b.p("PERF, PREPROD and PROD are built so that the loss of one Azure availability zone does not stop Pega, Kafka or search. "
+        "{ref:fig_zones} shows the layout. DEV, SIT and UAT may run in fewer zones to save cost, but their shared Kafka "
+        "cluster and OpenSearch service follow the same rules because they carry three environments.")
+    b.figure(GEN + "fig_zone_resilience.png", "Spreading each layer across three availability zones", OWN, width_cm=13, label="zones")
+    b.table(["Layer", "Zone design", "Setting", "Source"], [
+        ["AKS node pools", "Each user node pool spans zones 1, 2 and 3. The zones of a node pool cannot be changed after it is created, so this is decided before the first build", "`--zones 1 2 3` at node pool creation", "[R59]"],
+        ["Pega web and batch pods", "Spread evenly across zones; the scheduler still places pods if a zone is down", "`tier[*].topologySpreadConstraints` on `topology.kubernetes.io/zone`, `whenUnsatisfiable: ScheduleAnyway` (Appendix B)", "[R59, R61]"],
+        ["SRS pods", "Preferred anti-affinity across zones", "`srsRuntime.affinity` (Section 7.7)", "[R24]"],
+        ["Node pool capacity", "Two zones must hold the full peak load, so each pool is sized at 1.5 times the peak node count", "Sizing calculator (Appendix H)", "This design"],
+        ["Pod disruption budgets", "Keep at least one pod per tier during drains and upgrades", "`tier[*].pdb.minAvailable: 1`", "[R23]"],
+        ["Confluent Cloud", "Enterprise: the 99.99 % SLA needs at least 2 eCKU. Dedicated: the cluster must be created multi-zone, which needs at least 2 CKU and cannot be changed later", "Cluster creation (CC-1); one private endpoint per zone", "[R31, R32]"],
+        ["OpenSearch", "Three cluster-manager nodes and data nodes in three zones, one replica, zone awareness on", "Provider setting (Section 7.4)", "[R37]"],
+        ["Database, Key Vault, gateway, firewall", "Zone-redundant service tiers", "Customer landing zone standards", "Customer"],
+    ], caption="Availability zone design by layer", widths=[3, 6.4, 5, 2.2], size=8.5, label="zones")
+    b.callout("caution", "Topology spread with `ScheduleAnyway` is a preference. After a zone returns, Kubernetes does not move "
+              "running pods back, so the spread stays uneven until the next rollout. Check the spread after FS-21 and after "
+              "every zone incident, and restart the tier if one zone holds most of the pods.")

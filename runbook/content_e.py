@@ -29,7 +29,7 @@ def s12_deploy(b):
         ["NW-2", "For a new group, complete N-1 to N-6 (Section 6.4) for its Confluent cluster.", "Kafka engineer", "K-1 to K-3 pass from a pod", "Command output"],
         ["NW-3", "For a new group, create the OpenSearch private endpoint and DNS record as the provider documents.", "Search engineer", "S-1 resolves to a private IP and returns the version", "Command output"],
         ["NW-4", "Add firewall rules for this environment: its own Confluent and OpenSearch endpoints, `<okta-domain>:443`, registry and Pega Diagnostic Center if used. Deny production endpoints from non-production.", "Cloud architect", "Allowed tests pass; denied tests fail (IT-09)", "Rule export, test output"],
-        ["NW-5", "Apply Kubernetes network policies: deny by default; allow pega to srs, srs to the OpenSearch endpoint, pods to DNS.", "Platform team", "Test pod cannot reach a denied target", "Test output"],
+        ["NW-5", "Confirm the AKS cluster has a network policy engine. Apply Kubernetes network policies: deny by default; allow pega to srs on 8443, srs to the OpenSearch endpoint and Okta, pods to DNS (Section 7.7).", "Platform team", "Test pod cannot reach a denied target", "Test output"],
     ])
     b.h2("Secrets and identity")
     _steps_table(b, "Secrets and identity steps", [
@@ -56,7 +56,7 @@ def s12_deploy(b):
     b.h2("SRS")
     _steps_table(b, "SRS steps", [
         ["SR-1", "Create the SRS TLS keystore and truststore and store them in Key Vault.", "Platform team", "Secret `srs-runtime-certs` synced", "kubectl output"],
-        ["SR-2", "Deploy SRS: `helm upgrade --install srs-<code> pega/backingservices -n srs-<code> -f backingservices-<code>.yaml`.", "Search engineer", "SRS pods Ready (P-1)", "Output"],
+        ["SR-2", "Deploy SRS: `helm upgrade --install srs-<code> pega/backingservices -n srs-<code> -f backingservices-<code>.yaml`, then `kubectl apply -f netpol-srs-<code>.yaml` (Section 7.7).", "Search engineer", "SRS pods Ready (P-1); SRS reaches OpenSearch and the Okta key set", "Output"],
         ["SR-3", "From a pod in `pega-<code>`, call the SRS service with and without a token.", "Search engineer", "Without token refused; with token accepted (S-5)", "Output"],
     ])
     b.h2("Database clone and upgrade")
@@ -84,6 +84,36 @@ helm upgrade --install pega pega/pega -n pega-<code> -f pega-<code>-deploy.yaml 
         ["PREPROD", "Most recent full-size production copy", "Per policy", "NP2", "Rehearsal 1 and Rehearsal 2 of the production cutover, run by the cutover team."],
         ["PROD", "Final clone at cutover", "No", "PRD", "Section 13."],
     ], caption="Per-environment notes", widths=[2.2, 3.6, 1.6, 2, 7.2], size=8.5)
+    b.h2("Building the environments one after another")
+    b.p("The environments are built in waves, shown in {ref:fig_waves}. Each wave reuses what the earlier waves proved and "
+        "adds only what is new. A wave starts only when the exit check of the previous wave has passed, so a design fault is "
+        "found once, in DEV, rather than six times.")
+    b.figure(GEN + "fig_env_waves.png", "Environment build waves and the gate between each", OWN, width_cm=16.5, label="waves")
+    b.table(["Wave", "Environment", "New shared objects", "New per-environment objects", "Exit check"], [
+        ["0", "Foundations", "Landing zone, hub firewall rules, private DNS zones, registry, pipelines, both Okta authorization servers, monitoring workspaces", "None", "Connectivity checks from a test pod; pipeline renders all values files"],
+        ["1", "DEV", "cc-np1 with Private Link and DNS; os-np1 with cluster settings", "All objects in phases 2 to 7 of the build order", "First-start Go/No-Go; Okta claim, index-scoped role, DSS precedence (FS-24), GQ-08 behaviour and SRS key rotation (FS-33) recorded (M2)"],
+        ["2", "SIT, then UAT", "None", "Namespace, vault, Okta client, service account, ACLs, quota, SRS user, SRS, clone", "IT-01 to IT-10 between DEV, SIT and UAT"],
+        ["3", "PERF", "cc-np2 and os-np2 at the PROD type and size", "Same as wave 2, plus load test harness", "Load tests and sizing (Section 15); PROD sizes and cluster type agreed (M3)"],
+        ["4", "PREPROD", "None", "Same as wave 2", "Two timed rehearsals; isolation from PERF (M4, M5)"],
+        ["5", "PROD", "cc-prd, os-prd, PROD Okta authorization server, kv-pega-prd", "Same as wave 2, from the final clone", "Go/No-Go gates in Section 13.4"],
+    ], caption="Environment build waves", widths=[1.2, 2.2, 4.4, 4.4, 4.4], size=8, label="waves")
+    b.p("{ref:tab_env_checklist} lists what must be configured for each new environment, whichever wave it is in. Keep one "
+        "completed copy per environment with the evidence.")
+    b.table(["Item", "Value for this environment", "Where configured", "Check"], [
+        ["Code, group, namespaces", "`<code>`, NP1 / NP2 / PRD, `pega-<code>`, `srs-<code>`", "{ref:tab_naming}", "Code is not the start of another code"],
+        ["Key Vault and workload identity", "`kv-pega-<code>`", "SI-1, SI-2", "SecretStore Ready"],
+        ["Okta client and key", "`pega-srs-<code>`; `guid` = `pega26-<code>`", "SI-3, Section 7.6", "O-2 shows the right `guid`"],
+        ["Confluent service account, ACLs, quota, API key", "`sa-pega-<code>` on the group cluster", "CC-2 to CC-4", "K-7 ACL list; quota listed"],
+        ["Stream values", "`streamNamePattern: pega-<code>-{stream.name}`, group bootstrap", "Values file", "Pipeline naming check"],
+        ["OpenSearch user and role", "`pega26-<code>-srs` on the group service", "OS-3, OS-4", "IT-06"],
+        ["SRS release and network policy", "`srs-<code>`, URL with `:8443`", "SR-1 to SR-3", "S-5"],
+        ["customerDeploymentId", "`pega26-<code>`", "Values file", "Pipeline naming check; IT-05"],
+        ["Firewall and DNS", "Own Confluent and OpenSearch endpoints, Okta, deny production", "NW-4, NW-5", "IT-09"],
+        ["Clone, masking, upgrade", "Clone date and masking report", "DB-1 to DB-5", "Installer log"],
+        ["Clean-up CD-01 to CD-16", "Clean-up record", "Section 10.3", "Signed record"],
+        ["Monitoring", "Dashboards and alerts with the environment label", "Section 18", "Test alert received"],
+        ["Measurements", "Partitions, index size, build time, token rate, connections", "Appendix A", "Values recorded"],
+    ], caption="Configuration checklist for each new environment", widths=[3.8, 5, 3.4, 4.4], size=8, label="env_checklist")
 
 
 def s13_cutover(b):
@@ -204,6 +234,8 @@ def s14_testing(b):
         "Check the produce path with a message near 5,000,000 bytes, if the application produces large messages (FS-06).",
     ])
     b.h2("Performance tests")
+    b.p("These are the acceptance tests for Kafka and search. Section 15 gives the workload model, the full set of test "
+        "types, the harness and the entry and exit criteria they run under.")
     b.table(["ID", "Test", "Target", "Measured"], [
         ["PT-01", "Peak user load plus peak queue processor load in PERF", "Agreed response times; consumer lag returns to baseline after peak", ""],
         ["PT-02", "Full index build throughput", "Fits the production window after scaling (Section 7.8)", ""],
@@ -226,7 +258,7 @@ def s14_testing(b):
         ["FS-09", "One SRS pod lost", "Delete one SRS pod in PERF", "Searches continue on other pods", "Pod restart event", "Kubernetes recreates it", "No search errors seen by users"],
         ["FS-10", "Whole SRS deployment lost", "Scale SRS to zero in PERF", "Search and indexing fail; other functions continue", "Search errors; SRS alert", "Scale back; check indexing backlog clears", "Backlog cleared; counts match"],
         ["FS-11", "Okta token cannot be obtained", "Block `<okta-domain>` at the firewall for the environment", "Search fails once the current token expires", "Pega log token errors", "Restore the rule", "Search resumes without restart, or with restart recorded"],
-        ["FS-12", "Token from the wrong issuer", "Configure a test client on another authorization server", "SRS refuses if it checks issuer; record result", "SRS log", "Use the right server", "Behaviour recorded in Section 18.4"],
+        ["FS-12", "Token from the wrong issuer", "Configure a test client on another authorization server", "SRS refuses if it checks issuer; record result", "SRS log", "Use the right server", "Behaviour recorded in Section 20.4"],
         ["FS-13", "`guid` does not match customerDeploymentId", "Change the claim value for the DEV client", "SRS refuses requests", "401 or 403 in SRS log", "Restore the claim", "Search resumes"],
         ["FS-14", "Client key rotated in Okta but not in Key Vault", "Remove the current public key from the DEV client", "Token requests fail", "Okta system log; Pega log", "Register the key or update Key Vault and restart", "Search resumes"],
         ["FS-15", "OpenSearch status yellow", "Stop one data node (provider tooling) in PERF", "Searches continue", "S-2 yellow; alert", "Provider restores the node", "Green; no Pega errors"],
@@ -245,6 +277,11 @@ def s14_testing(b):
         ["FS-28", "Delayed or broken items from 8.8 processed unexpectedly", "Keep a sample of items in a DEV clone", "Items run on 26.1.1 when due or requeued", "Queue processor statistics; application log", "Apply the decision per queue processor (CD-05, CD-06)", "Behaviour matches the decision"],
         ["FS-29", "Index build interrupted", "Restart the batch tier during the build in DEV", "Build stops or continues", "Search landing page", "Resume or restart the build as Pega documents [R17]", "Complete build; counts match"],
         ["FS-30", "All batch pods lost", "Scale the batch tier to zero in PERF under load", "Queue processing stops; items accumulate in topics", "Queue backlog alert", "Scale back", "Backlog drains; no loss"],
+        ["FS-31", "Kafka connection storm", "Rolling restart of the web and batch tiers of PERF and PREPROD at the same time", "Connection attempts rise; Confluent may throttle [R31]", "Metrics API throttle metric by principal [R56]", "Stagger restarts across environments; keep the chart's `maxSurge: 1` [R23]", "No throttling with the staggered restart procedure"],
+        ["FS-32", "Partition creation paced by the cluster", "Refresh PERF (delete and recreate all topics) while PREPROD restarts", "Topic creation slows for both environments [R31]", "Pega log topic creation retries; time to Stream NORMAL", "Never refresh two environments in a group at once", "Time recorded; refresh procedure updated"],
+        ["FS-33", "Okta signing key rotation", "Rotate the DEV authorization server's keys manually in Okta [R53]", "SRS picks up the new key from the key set URL", "SRS 401 errors if it caches the old key", "Restart SRS; set rotation to manual if needed", "Search continues without an SRS restart"],
+        ["FS-34", "Client key rotation with two keys", "Register a second public key on the DEV client; switch Key Vault to the new private key; restart", "Okta accepts the assertion signed with either key", "Okta System Log `invalid_client` errors", "Keep the old key until the new one works", "Token issued with the new key; old key removed"],
+        ["FS-35", "Okta rate limit reached", "In a sandbox org or with Okta's agreement, drive token requests above the token endpoint limit", "HTTP 429 to Pega; search fails once the token expires [R52]", "Okta System Log rate-limit warning and violation events", "Find the source; lengthen token lifetime; raise the limit with Okta", "Warning alert fires before any violation"],
     ]
     b.table(["ID", "Scenario", "How to cause it safely", "Expected behaviour", "Detection", "Recovery", "Pass criteria"], rows,
             caption="Failure scenario catalogue", widths=[1.1, 2.4, 2.9, 2.6, 2.6, 2.6, 2.4], size=7, label="fail")
@@ -268,5 +305,5 @@ def s14_testing(b):
         ["AC-3", "All failure scenarios have been run at least once with results recorded; any defect is fixed or accepted by the business owner."],
         ["AC-4", "Performance results meet the targets agreed by the business owner."],
         ["AC-5", "Two PREPROD rehearsals completed, with the measured window within the agreed outage."],
-        ["AC-6", "Monitoring and alerts in Section 17.1 are live and tested."],
+        ["AC-6", "Monitoring and alerts in Section 18.5 are live and tested."],
     ], caption="Acceptance criteria", widths=[1.4, 15.2], size=9)
