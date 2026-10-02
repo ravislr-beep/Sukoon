@@ -48,7 +48,7 @@ def app_a_inventory(b):
         ["OpenSearch provider and version", "OD-03; Section 7.2", "", "", ""],
         ["OpenSearch endpoint (`<search-host>`) and port", "`srs.srsStorage.domain`, `port`", "", "", ""],
         ["OpenSearch data nodes, storage and shards", "Section 7.4", "", "", ""],
-        ["Disk watermarks (low, high, flood stage)", "Section 7.4; Section 18.5", "", "", ""],
+        ["Disk watermarks (low, high, flood stage)", "Section 7.4; Section 19.5", "", "", ""],
         ["Okta authorization server ID (`<auth-server-id>`)", "Token URL", "", "", ""],
         ["Token endpoint and JWKS URL (`<okta-jwks-url>`)", "`pegasearch.srsAuth.url`; `OAuthPublicKeyURL`", "", "", ""],
         ["Access token lifetime", "Okta access policy rule", "", "", ""],
@@ -68,13 +68,13 @@ def app_a_inventory(b):
         ["SRS image tag (`<tag>`)", "`srs.srsRuntime.srsImage`", ""],
         ["Index shard and replica counts after the first build", "Section 7.4", ""],
         ["Full index build time and document counts", "Section 7.8", ""],
-        ["Cloned DSS for stream and search (CD-01, CD-03)", "Section 10.3", ""],
+        ["Cloned DSS for stream and search (CD-01, CD-03)", "Section 11.3", ""],
     ], caption="Values recorded per environment (one copy per environment)", widths=[6, 5.4, 5.2], size=8.5)
 
 
 def app_b_values(b):
     b.h1("Complete Helm values files", appendix="B")
-    b.p("These files are generated from the same source as the tables in Section 9, for chart version 4.13.0 [R23, R24]. "
+    b.p("These files are generated from the same source as the tables in Section 10, for chart version 4.13.0 [R23, R24]. "
         "SIT stands for the NP1 environments and PROD for PROD; the other environments differ only in the code, the names in "
         "{ref:tab_names} and the replica counts. Values in angle brackets come from Appendix A. No secret is written in these "
         "files: each `external_secret_name` and `authSecret` names a Kubernetes secret created by the External Secrets "
@@ -258,6 +258,7 @@ def app_d_templates(b):
         ["E-08 Index record", "S-4 output, build time and count sheet", "Pega LSA"],
         ["E-09 Test records", "Isolation, functional, performance and failure scenario results", "Test lead"],
         ["E-10 Timings", "Start and end time of each step", "Cutover manager"],
+        ["E-11 Data protection", "DP-1 to DP-6 output; DT-01 to DT-12 results; signed indexed property list and snapshot inventory", "Security architect"],
     ], caption="Evidence pack items", widths=[3.6, 9.6, 3.4], size=8.5)
     b.h2("Clean-up record")
     b.table(["CD item", "Found in the clone", "Action taken", "Done by and time", "Check"], [

@@ -149,7 +149,7 @@ def clone_upgrade_flow():
   {decision("np", "Non-production\\nenvironment?")}
   mask [label="2 Mask personal data\\n(customer masking policy)", fillcolor="{SEC}"];
   upg [label="3 Installer job: action upgrade\\nupgradeType per Pega Support (GQ-04)", fillcolor="{PEGA}"];
-  clean [label="4 Clean-up and checks of cloned\\nKafka and search items (Section 10.3)", fillcolor="{DEC}"];
+  clean [label="4 Clean-up and checks of cloned\\nKafka and search items (Section 11.3)", fillcolor="{DEC}"];
   dep [label="5 Deploy 26.1.1 tiers: own prefix,\\nservice account, customerDeploymentId\\nbatch tier at zero, intake held", fillcolor="{PEGA}"];
   chk [label="6 Stream and search landing pages,\\nqueue processors, cloned items", fillcolor="{DEC}"];
   idx [label="7 Scale batch tier; full index build\\nthrough SRS into OpenSearch", fillcolor="{BACK}"];
@@ -397,7 +397,7 @@ def decision_kafka_auth():
 def decision_cloned_item():
     body = f'''
   rankdir=TB;
-  start [label="Item found in the cloned database (Section 10.3)", fillcolor="{PEGA}"];
+  start [label="Item found in the cloned database (Section 11.3)", fillcolor="{PEGA}"];
   {decision("q1", "Does it point to a Kafka,\\nsearch or other endpoint\\noutside this environment?")}
   {decision("q2", "Does Pega 26.1.1 replace\\nit with Helm or SRS\\nconfiguration?")}
   {decision("q3", "Does Pega document\\nit as removed in\\n'25 or '26?")}
@@ -426,8 +426,8 @@ def decision_migration():
   {decision("q4", "Application Kafka data set\\non the customer's own\\nKafka cluster?")}
   drain [label="NOT MIGRATED: hold intake, drain on 8.8,\\nrecord zero counts. 26.1.1 creates\\nempty topics under its own prefix", fillcolor="{OK}"];
   rebuild [label="NOT MIGRATED: full index build\\nthrough SRS from the upgraded\\ndatabase", fillcolor="{OK}"];
-  clone [label="TRAVELS WITH THE CLONE:\\nhandle as in Section 10.3,\\ntest in rehearsal", fillcolor="{DEC}"];
-  ds [label="DECIDE PER DATA SET\\n(Section 11.3)", fillcolor="{DEC}"];
+  clone [label="TRAVELS WITH THE CLONE:\\nhandle as in Section 11.3,\\ntest in rehearsal", fillcolor="{DEC}"];
+  ds [label="DECIDE PER DATA SET\\n(Section 12.3)", fillcolor="{DEC}"];
   start -> q1;
   q1 -> drain [label="Yes"]; q1 -> q2 [label="No"];
   q2 -> rebuild [label="Yes"]; q2 -> q3 [label="No"];
@@ -703,6 +703,87 @@ def isolation_layers():
     render("fig_isolation_layers", body)
 
 
+RESTRICTED = "#C00000"
+CONFIDENTIAL = "#C55A11"
+INTERNAL = "#7F7F7F"
+
+
+def data_flows():
+    body = f'''
+  rankdir=TB; nodesep=0.55; ranksep=0.7; newrank=true;
+  kv [label="Key Vault kv-pega-<env>\\nsecrets", fillcolor="{SEC}"];
+  okta [label="Okta authorization server\\ntokens carry no personal data", fillcolor="{SEC}"];
+  subgraph cluster_aks {{
+    label="AKS cluster: namespaces pega-<env> and srs-<env>"; labeljust=l; style="rounded,dashed"; color="{LINE}"; fontsize=10;
+    web [label="Pega web tier\\nproducers, search queries", fillcolor="{PEGA}"];
+    bat [label="Pega batch tier\\nconsumers, indexer", fillcolor="{PEGA}"];
+    srs [label="SRS srs-<env>\\nport 8443", fillcolor="{BACK}"];
+    disk [label="Node disks\\ncontainer logs, GC log,\\nheap dumps", shape=folder, fillcolor="{AZ}"];
+  }}
+  db [label="Pega database\\n(system of record)\\ncase and data records,\\ndelayed and broken items", shape=cylinder, style=filled, fillcolor="{AZ}"];
+  k [label="Confluent Cloud\\ntopics pega-<env>-*", fillcolor="{EXT}"];
+  os [label="Managed OpenSearch\\nindexes pega26-<env>*,\\nsnapshots", fillcolor="{EXT}"];
+  mon [label="Log Analytics\\nand SIEM", fillcolor="{AZ}"];
+  {{rank=same; kv; okta;}}
+  {{rank=same; web; bat;}}
+  {{rank=same; srs; disk;}}
+  {{rank=same; db; k; os; mon;}}
+  kv -> web [label="External Secrets", color="{INTERNAL}", fontcolor="{INTERNAL}", style=dashed];
+  web -> okta [label="HTTPS: client\\nassertion, token", color="{INTERNAL}", fontcolor="{INTERNAL}"];
+  srs -> okta [label="HTTPS: key set", color="{INTERNAL}", fontcolor="{INTERNAL}", style=dashed, constraint=false];
+  web -> db [label="JDBC over TLS\\ncase data", color="{RESTRICTED}", fontcolor="{RESTRICTED}", penwidth=1.6];
+  web -> k [label="SASL_SSL over Private Link\\nqueue messages,\\ncluster messaging", color="{CONFIDENTIAL}", fontcolor="{CONFIDENTIAL}", penwidth=1.6];
+  k -> bat [label="SASL_SSL\\nconsume", color="{CONFIDENTIAL}", fontcolor="{CONFIDENTIAL}", penwidth=1.6, constraint=false];
+  web -> srs [label="HTTPS + JWT\\nsearch terms, results", color="{RESTRICTED}", fontcolor="{RESTRICTED}", penwidth=1.6];
+  bat -> srs [label="HTTPS + JWT\\nindexed properties", color="{RESTRICTED}", fontcolor="{RESTRICTED}", penwidth=1.6];
+  srs -> os [label="HTTPS over private\\nendpoint: documents", color="{RESTRICTED}", fontcolor="{RESTRICTED}", penwidth=1.6];
+  bat -> disk [label="logs, dumps", color="{RESTRICTED}", fontcolor="{RESTRICTED}", style=dashed];
+  disk -> mon [label="Azure Monitor\\nagent, HTTPS", color="{CONFIDENTIAL}", fontcolor="{CONFIDENTIAL}", style=dashed];
+  leg [shape=plaintext, style="", label=<<TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="4" COLOR="{LINE}">
+    <TR><TD COLSPAN="3"><B>Line colour: highest data class on the hop</B></TD></TR>
+    <TR><TD><FONT COLOR="{RESTRICTED}">Restricted: personal or sensitive case data</FONT></TD>
+        <TD><FONT COLOR="{CONFIDENTIAL}">Confidential: record keys, operator IDs, context</FONT></TD>
+        <TD><FONT COLOR="{INTERNAL}">Internal, or secret material</FONT></TD></TR></TABLE>>];
+  os -> leg [style=invis];
+'''
+    render("fig_data_flows", body)
+
+
+def data_failure():
+    body = f'''
+  rankdir=TB; nodesep=0.35; ranksep=0.35;
+  subgraph cluster_q {{
+    label="Queue processor message"; style="rounded,dashed"; color="{LINE}"; fontsize=10;
+    p [label="Producer: Queue-For-Processing\\nor Run in Background", fillcolor="{PEGA}"];
+    {decision("q1", "Stream service\\navailable?")}
+    dbq [label="Held in the database;\\njob scheduler queues it\\nwhen Kafka returns [R66]", fillcolor="{AZ}"];
+    t [label="Topic pega-<env>-<queue>", fillcolor="{EXT}"];
+    c [label="Consumer runs the\\nqueue processor activity", fillcolor="{PEGA}"];
+    {decision("q2", "Succeeded?")}
+    ok1 [label="Done; offset committed", fillcolor="{OK}"];
+    d [label="Delayed item for retry\\npr_sys_delayed_queue", fillcolor="{AZ}"];
+    {decision("q3", "MaxAttempts\\nreached?")}
+    br [label="Broken item with payload\\nand error\\npr_sys_msg_qp_brokenitems", fillcolor="{STOP}"];
+    fx [label="Fix cause; requeue or delete\\nin Admin Studio [R64]", fillcolor="{SEC}"];
+    p -> q1; q1 -> t [label="yes"]; q1 -> dbq [label="no"]; dbq -> t [style=dashed];
+    t -> c -> q2; q2 -> ok1 [label="yes"]; q2 -> d [label="no"]; d -> q3;
+    q3 -> c [label="no, retry", style=dashed]; q3 -> br [label="yes"]; br -> fx;
+  }}
+  subgraph cluster_s {{
+    label="Search index update"; style="rounded,dashed"; color="{LINE}"; fontsize=10;
+    s0 [label="Case or data instance saved", fillcolor="{PEGA}"];
+    s1 [label="pySASIncrementalIndexer\\nqueue processor [R70]", fillcolor="{PEGA}"];
+    s2 [label="SRS bulk request\\n(100 items by default)", fillcolor="{BACK}"];
+    {decision("s3", "Indexed?")}
+    s4 [label="Searchable", fillcolor="{OK}"];
+    s5 [label="Broken item with error type\\nCONNECTION, STORAGE,\\nUNRECOGNISED_VALUE [R69]", fillcolor="{STOP}"];
+    s6 [label="Fix SRS, OpenSearch or Okta;\\nrequeue; reconcile counts;\\nreindex the class if needed", fillcolor="{SEC}"];
+    s0 -> s1 -> s2 -> s3; s3 -> s4 [label="yes"]; s3 -> s5 [label="no, after retries"]; s5 -> s6;
+  }}
+'''
+    render("fig_data_failure", body)
+
+
 if __name__ == "__main__":
     for old in OUT.glob("*"):
         if old.name not in ("fig_target_architecture.png",):
@@ -734,3 +815,5 @@ if __name__ == "__main__":
     perf_harness()
     sizing_flow()
     isolation_layers()
+    data_flows()
+    data_failure()

@@ -1,4 +1,4 @@
-"""Sections 16, 17, 19 and 20: known issues, troubleshooting, operations, risks and decisions."""
+"""Sections 17, 18, 20 and 21: known issues, troubleshooting, operations, risks and decisions."""
 from content_a import GEN, PUB, OWN
 import envs as E
 
@@ -40,7 +40,7 @@ def s16_issues(b):
         ["Indexes created with wrong names or settings, or index creation blocked", "Auto-creation not disabled, or SRS user lacks rights [R14]", "Apply cluster settings before SRS starts; IT-06", "Apply settings; widen the role by the missing permission only; rebuild"],
         ["SRS returns 401 or 403; Pega search fails", "Okta token missing `pega.search:full`, missing or wrong `guid`, or issued by the org authorization server [R42, R44]", "Custom authorization server; O-2 decode in every environment", "Fix the scope, claim or server; restart Pega if the client changed"],
         ["SRS will not start against OpenSearch", "SRS image not on the matrix for the OpenSearch version [R14]", "Pin versions per Section 7.2", "Use a matrix pair"],
-        ["Old indexes remain after a refresh", "Refresh skipped the index clean-up", "Refresh checklist step (Section 19.3)", "Delete `pega26-<code>*` as the environment's SRS user, then rebuild"],
+        ["Old indexes remain after a refresh", "Refresh skipped the index clean-up", "Refresh checklist step (Section 20.3)", "Delete `pega26-<code>*` as the environment's SRS user, then rebuild"],
         ["Index deletion fails", "`destructive_requires_name` true [R14]", "OS-2", "Set to false"],
         ["`helm install` of SRS fails: \"Only one authentication can be enabled\"", "`srsStorage.tls.enabled` and basic authentication both true; `tls` means certificate authentication [R24]", "`tls.enabled: false`; `helm template` in the pipeline", "Set `tls.enabled: false`"],
         ["Pega search fails at first start; SRS pods healthy", "`externalURL` without `:8443`; SRS serves HTTPS on 8443 only [R62]", "URL with port; S-5 from the Pega namespace", "Correct the URL; restart the Pega tiers"],
@@ -51,14 +51,23 @@ def s16_issues(b):
     b.h2("Platform")
     _issues(b, "Known issues: platform", [
         ["Most pods of a tier in one zone after a zone incident", "Spread is a scheduling preference; running pods are not moved back [R61]", "Check the spread after FS-21", "Rolling restart of the tier"],
-        ["Pods killed with OOMKilled and no Java error", "Heap too close to the container memory limit", "Heap at about two thirds of the limit (Section 9.2)", "Lower the heap or raise the limit"],
+        ["Pods killed with OOMKilled and no Java error", "Heap too close to the container memory limit", "Heap at about two thirds of the limit (Section 10.2)", "Lower the heap or raise the limit"],
         ["Delayed items and job schedulers run at the wrong hour", "JVM time zone differs from the cloned database [R63]", "`-Duser.timezone` in `javaOpts` and installer `customJVMArgs`", "Set both; restart"],
-        ["GC logs and heap dumps lost after a crash", "Written to ephemeral pod storage [R23]", "Log collector tails the GC file (Section 18.2)", "Collect from the replacement pod; enable collection"],
+        ["GC logs and heap dumps lost after a crash", "Written to ephemeral pod storage [R23]", "Log collector tails the GC file (Section 19.2)", "Collect from the replacement pod; enable collection"],
+    ])
+    b.h2("Data protection")
+    _issues(b, "Known issues: data protection", [
+        ["Personal data found in a non-production index", "Masking ran after the index build, or a property was missed by the masking rules", "Mask before the upgrade (Section 11.5); DT-03 on every refresh", "Delete the environment's indexes (S-6) and rebuild after masking"],
+        ["Self-managed key cannot be added to an existing Confluent cluster", "Encryption mode is fixed at creation [R74]", "OD-14 before the cluster is created", "Create a new cluster and move the environments; topics are recreated by Pega"],
+        ["Confluent cannot reach the key on an Enterprise cluster", "Key Vault firewall blocks public access; Enterprise needs access from all networks [R74]", "Key-only vault for the Confluent key (Section 9.5)", "Correct the key vault networking; the cluster is unavailable while the key is unreachable"],
+        ["Node pool without encryption at host", "Pool created before OD-18; the setting cannot be changed [R78]", "Pipeline check of `enableEncryptionAtHost` (DP-6)", "Add a new pool with the setting; drain and delete the old pool"],
+        ["Search terms with personal data in OpenSearch slow logs", "Slow logs record the query [R58]", "Slow logs classified Restricted (Section 9.6)", "Restrict access; apply production log retention"],
+        ["Broken items accumulate with case data", "Items left in the broken queue after incidents", "Broken item alert; OD-17 retention", "Requeue or delete after the cause is fixed"],
     ])
     b.h2("Process")
     b.p("Every refresh of a non-production environment from a new production clone repeats the risky parts of the first build: "
         "masking, topic and index clean-up, repointed integrations and a full reindex. Treat each refresh as a change with "
-        "the checklist in Section 19.3, not as a database task alone.")
+        "the checklist in Section 20.3, not as a database task alone.")
 
 
 def s17_troubleshooting(b):
@@ -105,7 +114,7 @@ def s17_troubleshooting(b):
 
 def s19_ops(b):
     b.h1("Operations, onboarding, refresh and retirement")
-    b.p("Monitoring, logging and alerting are in Section 18. This section covers the routine work that keeps the "
+    b.p("Monitoring, logging and alerting are in Section 19. This section covers the routine work that keeps the "
         "services healthy and the procedures for adding, refreshing and removing an environment.")
     b.h2("Routine tasks")
     b.table(["Task", "Frequency", "Owner", "Procedure"], [
@@ -128,7 +137,7 @@ def s19_ops(b):
         "Create the service account, ACLs, quota and API key on the group's cluster (CC-2 to CC-4).",
         "Create the OpenSearch user and index-scoped role (OS-3, OS-4).",
         "Deploy SRS (SR-1 to SR-3).",
-        "Clone, mask and upgrade the database (DB-1 to DB-5), then follow the first-start control (Section 10.4).",
+        "Clone, mask and upgrade the database (DB-1 to DB-5), then follow the first-start control (Section 11.4).",
         "Run the isolation tests against every other environment in the group.",
         "Add the environment to monitoring and the cost review.",
     ])
@@ -138,7 +147,7 @@ def s19_ops(b):
         "Scale the environment's Pega tiers to zero.",
         "Delete its topics and consumer groups under `pega-<code>-` (K-9), and its indexes `pega26-<code>*` (S-6). Keep the prefix, customerDeploymentId, ACLs, quota, Okta client and SRS user.",
         "Take, mask and upgrade the new clone (DB-1 to DB-5).",
-        "Follow the first-start control (Section 10.4), including repointing application Kafka data sets and other endpoints.",
+        "Follow the first-start control (Section 11.4), including repointing application Kafka data sets and other endpoints.",
         "Run the full index build and the functional checks.",
         "Record the refresh in the environment log with the evidence.",
     ])
@@ -188,13 +197,18 @@ def s20_risks(b):
         ["RK-13", "Confluent connection and request limits throttle Pega during restarts or peaks", "M", "M", "Measure connections and requests per pod; stagger restarts; throttle alert; FS-31", "Kafka team"],
         ["RK-14", "One Okta org rate limit shared by all environments and other applications", "M", "H", "Token rate measured; System Log alerts; token lifetime; FS-35", "Identity team"],
         ["RK-15", "The installer needs Kafka during the upgrade and the chart does not supply it", "L", "H", "GQ-08; installer egress to Confluent allowed in DEV", "Pega LSA"],
-        ["RK-16", "Load test unrepresentative, so PROD is undersized", "M", "H", "Workload model from production logs; exit criteria in Section 15.5", "Performance lead"],
+        ["RK-16", "Load test unrepresentative, so PROD is undersized", "M", "H", "Workload model from production logs; exit criteria in Section 16.5", "Performance lead"],
+        ["RK-17", "Personal data copied to Kafka through page snapshots in queue messages", "M", "M", "Snapshot only with approval; DT-01; GQ-09", "Pega LSA"],
+        ["RK-18", "Personal data in the shared services reachable by Confluent or OpenSearch administrators", "M", "H", "Index minimisation; break-glass access; audit logging; mask PREPROD (OD-15)", "Security architect"],
+        ["RK-19", "Personal data leaked through logs, heap dumps or support cases", "M", "H", "Rules in Section 9.6; DT-09, DT-10", "Operations lead"],
+        ["RK-20", "A key decision taken after the cluster or node pool exists forces a rebuild", "M", "M", "OD-14 and OD-18 decided by M2", "Security architect"],
+        ["RK-21", "Unprocessed messages lost because consumer lag exceeded topic retention", "L", "H", "OD-16; lag drain alert; DT-08", "Kafka team"],
     ], caption="Risk register (L likelihood, I impact: H high, M medium, L low)", widths=[1.3, 5.6, 0.7, 0.7, 6, 2.3], size=8.5)
     b.h2("Open decisions")
-    b.p("Each open decision has a recommended answer, an owner and the milestone by which it is needed (Section 13.2). If a "
+    b.p("Each open decision has a recommended answer, an owner and the milestone by which it is needed (Section 14.2). If a "
         "decision is not taken by its milestone, the recommended answer applies and the risk is recorded.")
     b.table(["ID", "Decision", "Options", "Recommended answer", "Owner", "Needed by"], [
-        ["OD-01", "Pega Support answers (GQ-01 to GQ-08)", "Answers received; conservative plan", "Raise now; plan conservatively until answered", "Pega LSA", "M2"],
+        ["OD-01", "Pega Support answers (GQ-01 to GQ-11)", "Answers received; conservative plan", "Raise now; plan conservatively until answered", "Pega LSA", "M2"],
         ["OD-02", "Confluent cluster types", "Enterprise; Dedicated", "Enterprise for NP1; PROD type for NP2 and PROD after PERF measurement", "Kafka team", "M2 (NP1), M3 (NP2, PROD)"],
         ["OD-03", "OpenSearch provider", "Third-party managed on Azure; self-managed on AKS", "Provider that passes Section 7.3", "Enterprise architect", "M2"],
         ["OD-04", "SRS per environment or shared", "Per environment; per group", "Per environment", "Search team", "M2"],
@@ -207,6 +221,11 @@ def s20_risks(b):
         ["OD-11", "Topic creation", "Pega creates (CREATE ACL); pre-created topics", "Pega creates", "Security architect", "M2"],
         ["OD-12", "Outage and rollback windows", "From rehearsal", "Rehearsal time plus 25 %", "Business owner", "M5"],
         ["OD-13", "OpenSearch snapshots", "None; provider snapshots", "Provider snapshots for PROD and NP2; none for NP1", "Search team", "M3"],
+        ["OD-14", "Confluent encryption keys per group", "Provider-managed; self-managed key in Azure Key Vault", "Provider-managed for NP1; per key policy for cc-prd and for cc-np2 if it holds production data; Dedicated or a key-only vault for Enterprise (Section 9.5)", "Security architect", "M2, before any cluster is created"],
+        ["OD-15", "Data class of PERF and PREPROD", "Masked; unmasked production", "Mask both", "Data security officer", "M2"],
+        ["OD-16", "Retention of Pega topics", "Confluent default; shorter; longer", "7 days unless policy needs less; never below the longest outage to survive", "Kafka team, data security officer", "M2"],
+        ["OD-17", "Broken item retention and the approved list of indexed properties", "Per application", "Resolve or delete broken items within 30 days; indexed property list signed by the data owner", "Application owner", "M3"],
+        ["OD-18", "Encryption at host and disk keys for AKS node pools", "Platform keys; customer key", "Encryption at host on every pool; customer key per the key policy", "Platform team", "M2, before any node pool is created"],
     ], caption="Open decisions", widths=[1.3, 3, 3.6, 4.6, 2.2, 1.9], size=8)
     b.h2("Assumptions")
     b.table(["ID", "Assumption", "Check that would prove it wrong"], [
@@ -220,6 +239,8 @@ def s20_risks(b):
         ["AS-08", "The AKS clusters were created with a network policy engine, so NetworkPolicy objects are enforced", "A test pod reaches a target that a policy denies"],
         ["AS-09", "The Azure region offers three availability zones for the node sizes chosen", "Node pool creation with zones 1, 2 and 3 fails"],
         ["AS-10", "Production request logs or Pega PDC data are available to build the workload model", "No usable 8.8 usage data"],
+        ["AS-11", "The AKS region and the chosen VM sizes support encryption at host [R78]", "Node pool creation with `--enable-encryption-at-host` fails"],
+        ["AS-12", "The chosen OpenSearch provider encrypts data and snapshots at rest and enforces HTTPS", "Provider documentation or contract says otherwise"],
     ], caption="Assumptions", widths=[1.4, 7.6, 7.6], size=9)
     b.h2("Source reconciliation")
     b.p("These are the places where sources disagree or leave a gap, with the action taken.")

@@ -27,7 +27,7 @@ def s5_shared(b):
     b.h2("Isolation controls")
     b.p("Isolation is enforced at every layer, so a single mistake does not expose another environment. {ref:tab_isolation} "
         "lists the control at each layer and the test that proves it.")
-    b.table(["Layer", "Control", "What it prevents", "Proof (Section 14.3)"], [
+    b.table(["Layer", "Control", "What it prevents", "Proof (Section 15.3)"], [
         ["Kafka topics", "Prefix `pega-<code>-` per environment through `stream.streamNamePattern`; TOPIC ACL ALL PREFIXED on that prefix only [R11, R23]", "Reading, writing or deleting another environment's topics", "IT-01, IT-02"],
         ["Kafka consumer groups", "GROUP ACL ALL PREFIXED on the same prefix [R11]", "Joining or resetting another environment's consumer groups", "IT-03"],
         ["Kafka credentials", "One service account per environment; API keys in that environment's Key Vault only [R36]", "Credential reuse across environments", "IT-04"],
@@ -37,7 +37,7 @@ def s5_shared(b):
         ["Search tokens", "Okta client per environment; SRS checks that `guid` equals its own customerDeploymentId [R23]", "A token for one environment being accepted by another environment's SRS", "IT-07"],
         ["Secrets", "Key Vault per environment; External Secrets Operator identity per namespace [R48]", "Pods reading another environment's secrets", "IT-08"],
         ["Network", "Firewall allow-list per environment; Kubernetes network policies deny by default", "A cloned environment reaching production Kafka, production OpenSearch or production integrations", "IT-09, IT-10"],
-        ["Cloned data", "Application Kafka data sets and other endpoints repointed or disabled before the batch tier starts (Section 10.4)", "Test environments consuming production topics or calling production systems", "IT-10, FS-27"],
+        ["Cloned data", "Application Kafka data sets and other endpoints repointed or disabled before the batch tier starts (Section 11.4)", "Test environments consuming production topics or calling production systems", "IT-10, FS-27"],
     ], caption="Isolation controls by layer", widths=[2.6, 6.4, 4.4, 3.2], size=8.5, label="isolation")
     b.p("{ref:fig_layers} shows the same controls as layers. A request from one environment has to pass every layer to reach "
         "another environment's data, so a single misconfiguration does not expose it.")
@@ -95,7 +95,7 @@ def s6_kafka(b):
     b.p("Pega uses Kafka in two ways. The stream service carries every queue processor and job scheduler, so Pega is not fully "
         "functional without it [R11]. This is what the Helm `stream` section configures. Separately, a Kafka data set is an "
         "application feature that reads from or writes to the customer's own Kafka topics. Pega requires that Kafka data sets "
-        "use a different Kafka service from the stream service [R11]. Section 11.3 covers data sets.")
+        "use a different Kafka service from the stream service [R11]. Section 12.3 covers data sets.")
     b.figure(PUB + "pega_docs_kafka-use-cases.jpg", "The two Kafka use cases in Pega Platform",
              "Source: Pega Documentation, \"External Kafka in your deployment\" [R11]. © Pegasystems Inc. Reproduced with attribution.",
              width_cm=15.5)
@@ -107,7 +107,7 @@ def s6_kafka(b):
     b.p("Confluent Cloud is a managed service, so some broker settings Pega lists cannot be changed by the customer. "
         "{ref:tab_cc_map} shows each requirement, what Confluent Cloud allows, and what the runbook does.")
     b.table(["Pega requirement", "Confluent Cloud position", "Action"], [
-        ["Kafka client 4.0.0 in '26, compatible with 3.9.2 [R3]", "Fully managed Kafka", "Produce, consume and transactional checks from a Pega pod in every environment (Section 14.4)"],
+        ["Kafka client 4.0.0 in '26, compatible with 3.9.2 [R3]", "Fully managed Kafka", "Produce, consume and transactional checks from a Pega pod in every environment (Section 15.4)"],
         ["Confluent 5.4.x or later [R11]", "Current release line", "None beyond the checks above"],
         ["message.max.bytes 5000000 [R11]", "Topic max.message.bytes default 2,097,164; editable up to 20,971,520 on Enterprise and Dedicated [R33]", "After each start, set max.message.bytes to 5,000,000 on every Pega topic (command K-6)"],
         ["replica.fetch.max.bytes and replica.fetch.response.max.bytes 5000100 [R11]", "Not in the list of editable cluster settings [R34]", "Ask Confluent support to confirm in writing (RC-03)"],
@@ -139,8 +139,8 @@ def s6_kafka(b):
               "[R56].",
               "Pega pods open many Kafka connections: one set per producer, per queue-processor consumer thread and for cluster "
               "messaging. A rolling restart of a large tier, or every environment in a group starting at once after a refresh, "
-              "can reach the connection-attempt limit. Measure connections per pod in DEV (Section 15.8), stagger restarts in "
-              "shared groups, and alert on throttling (Section 18.5)."])
+              "can reach the connection-attempt limit. Measure connections per pod in DEV (Section 16.8), stagger restarts in "
+              "shared groups, and alert on throttling (Section 19.5)."])
     b.callout("caution", "Partition creation and deletion are paced at 500 per five minutes per cluster on Enterprise [R31]. "
               "The first start of an environment creates every Pega topic, and a refresh deletes them all. With several hundred "
               "partitions per environment, both can take tens of minutes and slow every other environment on the cluster that "
@@ -203,7 +203,7 @@ confluent kafka acl create --allow --service-account <sa-id> \\
 confluent api-key create --resource <lkc-id> --service-account <sa-id>
 confluent kafka acl list --service-account <sa-id> --cluster <lkc-id>""", title="Creating and listing one environment's service account and ACLs")
     b.p("To remove an environment's access, delete its ACLs with `confluent kafka acl delete` using the same flags, delete its "
-        "API keys, then delete the service account (Section 19.4).")
+        "API keys, then delete the service account (Section 20.4).")
     b.h2("Topic design")
     b.table(["Setting", "Value", "Reason"], [
         ["streamNamePattern", "`pega-<code>-{stream.name}`", "Separates environments on a shared cluster. Chart default is `pega-{stream.name}` [R23]."],
@@ -214,7 +214,7 @@ confluent kafka acl list --service-account <sa-id> --cluster <lkc-id>""", title=
         ["Cluster messaging topics after Hazelcast removal", "Covered by the prefixed ACL if Pega applies the pattern to them", "Pega names five topics in the Hazelcast removal prerequisites [R6] but does not say whether the pattern applies. List the topics after the first DEV start and add literal ACLs for any outside the prefix (FS-04)."],
     ], caption="Topic design settings", widths=[3.6, 4.6, 8.4], size=9)
     b.p("When an environment is refreshed from a new clone, keep its prefix and delete its old topics and consumer groups "
-        "before the first start (Section 19.3). Keeping the prefix keeps ACLs, quotas and dashboards unchanged. A new prefix "
+        "before the first start (Section 20.3). Keeping the prefix keeps ACLs, quotas and dashboards unchanged. A new prefix "
         "is only needed if old topics cannot be deleted, for example during an investigation; in that case create a new "
         "prefix such as `pega-sit2-` with its own ACLs.")
     b.h2("Partition budget")

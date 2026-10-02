@@ -1,4 +1,4 @@
-"""Sections 9 to 11: Helm configuration, the cloned database, the 8.8 content question."""
+"""Sections 10 to 12: Helm configuration, the cloned database, the 8.8 content question."""
 from content_a import GEN, PUB, OWN
 import envs as E
 import values_gen as V
@@ -12,8 +12,8 @@ def s9_helm(b):
         "and default values file of that chart version. Each environment built from a clone goes through three Helm runs of "
         "the `pega` chart, shown in {ref:tab_runs}.")
     b.table(["Run", "global.actions.execute", "What runs", "Why"], [
-        ["U: upgrade", "`upgrade`", "Installer job only; no Pega pods", "Upgrades the cloned database. Pega must not start until the clean-up in Section 10.3 is done."],
-        ["F: first start", "`deploy`", "Web tier only; batch tier `replicas: 0` with HPA off", "No queue processor, job scheduler or real-time data flow runs while cloned items are checked (Section 10.4)."],
+        ["U: upgrade", "`upgrade`", "Installer job only; no Pega pods", "Upgrades the cloned database. Pega must not start until the clean-up in Section 11.3 is done."],
+        ["F: first start", "`deploy`", "Web tier only; batch tier `replicas: 0` with HPA off", "No queue processor, job scheduler or real-time data flow runs while cloned items are checked (Section 11.4)."],
         ["D: steady state", "`deploy`", "Web and batch tiers at normal size", "Index build, then normal operation."],
     ], caption="Helm runs of the pega chart for an environment built from a clone", widths=[2.6, 3.2, 4.6, 6.2], size=9, label="runs")
     b.p("The chart's actions are `install`, `deploy`, `install-deploy`, `upgrade` and `upgrade-deploy` [R23]. "
@@ -68,14 +68,14 @@ def s9_helm(b):
     b.table(["Key", "Meaning"] + E.NAMES + ["Source"], rows, caption="Pega chart keys per environment (chart 4.13.0)",
             widths=[3.5, 2.5, 1.55, 1.55, 1.55, 1.55, 1.55, 1.55, 1.25], size=6.5, label="pega_keys")
     b.callout("note", "Starting replica counts are sized for function, not load. Set the PERF, PREPROD and PROD values from the "
-              "PERF load test (Section 15), and keep PREPROD equal to PROD.")
+              "PERF load test (Section 16), and keep PREPROD equal to PROD.")
     b.h3("Topology spread, heap and garbage collection logging")
     b.bullets([
         "`topologySpreadConstraints` is read by the tier template of chart 4.13.0 [R61] but is not listed in the README, so check it in the `helm template` output after every chart upgrade. The label selector must match the pod label the chart sets, `app: <deployment name>-<tier name>`, for example `app: pega-web`.",
         "The chart defaults the Pega container to 12Gi of memory with a commented heap of 8192m [R23]. Keep the heap at about two thirds of the container memory: the JVM also needs native memory for threads, metaspace, Kafka client buffers and the code cache, and a container that exceeds its limit is killed without a Java error.",
-        "Set the JVM arguments Pega recommends in `tier[*].javaOpts` [R63]: garbage collection logging to `/usr/local/tomcat/logs/gc.log`, `-XX:MaxMetaspaceSize=768m` so metaspace cannot exhaust node memory, `-XX:+UseStringDeduplication` and `-XX:+HeapDumpOnOutOfMemoryError`. The values files in Appendix B carry them. GC logs and heap dumps are on ephemeral pod storage, so the log collector must tail the GC file (Section 18.2).",
+        "Set the JVM arguments Pega recommends in `tier[*].javaOpts` [R63]: garbage collection logging to `/usr/local/tomcat/logs/gc.log`, `-XX:MaxMetaspaceSize=768m` so metaspace cannot exhaust node memory, `-XX:+UseStringDeduplication` and `-XX:+HeapDumpOnOutOfMemoryError`. The values files in Appendix B carry them. GC logs and heap dumps are on ephemeral pod storage, so the log collector must tail the GC file (Section 19.2).",
         "Pega images run in Etc/UTC. If the cloned 8.8 database does not use UTC, set `-Duser.timezone` to the database time zone in `javaOpts` and in the installer's `customJVMArgs` as well [R63]. A mismatch between the two shifts delayed queue items and job scheduler times.",
-        "Long GC pauses show up as Kafka consumer group rebalances and as SRS request timeouts, so the GC log is the first thing to read when those appear (Section 17).",
+        "Long GC pauses show up as Kafka consumer group rebalances and as SRS request timeouts, so the GC log is the first thing to read when those appear (Section 18).",
         "Set `pegaDiagnosticUser` and its password through the diagnostic secret, so support staff can download Tomcat logs without a redeploy [R23].",
     ])
     b.h2("Backingservices chart keys per environment")
@@ -129,7 +129,7 @@ def s10_clone(b):
     b.p("Pega's pages say that Hazelcast must be removed before updating to '25 or later, and that this applies to embedded "
         "Hazelcast and the Clustering Service [R5]. They do not say how this applies to a database that is cloned, upgraded "
         "offline and only ever started on 26.1.1. {ref:tab_gq} lists the questions to raise in one Pega Support case before M2. "
-        "Any condition Pega sets becomes a mandatory step in Section 12.7.")
+        "Any condition Pega sets becomes a mandatory step in Section 13.7.")
     b.table(["ID", "Question", "Why it matters", "Evidence found", "Answer", "Date"], [
         ["GQ-01", "Is a direct upgrade of an 8.8 database to 26.1.1 with the 26.1.1 installer supported?", "The whole path depends on it", "Not settled by the pages read", "Open", ""],
         ["GQ-02", "Which 8.8 patch level is required before the clone?", "May need an 8.8 patch in production before the final clone", "Not settled", "Open", ""],
@@ -139,9 +139,12 @@ def s10_clone(b):
         ["GQ-06", "How are 8.8 delayed and broken queue items processed after the upgrade, given the '26 queue processing changes?", "Items may fail or run unexpectedly", "'26 changes queue processing [R3]", "Open", ""],
         ["GQ-07", "Is any SRS or customerDeploymentId state stored in the database that a clone would carry?", "Could link a clone to another environment's indexes", "Not settled; tested as IT-05", "Open", ""],
         ["GQ-08", "Does the 26.1.1 installer need a Kafka connection while it upgrades an 8.8 database, and if so how is it supplied in the Helm installer job?", "Run U could fail or stall; chart 4.13.0 passes no stream settings to the installer job", "From '25, Pega command-line tooling needs Kafka [R8]; rendered run U has no `STREAM_*` values", "Open", ""],
+        ["GQ-09", "Are page snapshots in queue processor messages, delayed items and broken items encrypted when the class uses BLOB encryption or a PropertyEncrypt policy?", "Decides whether Restricted data sits in plaintext on Kafka and in queue tables (Section 9.3)", "BLOB encryption does not cover exposed columns [R71]; queue payloads not covered", "Open", ""],
+        ["GQ-10", "What do the cluster messages that replaced Hazelcast carry over Kafka in 26.1.1, and can they include case or clipboard data?", "Sets the data class of those topics (D-05)", "Kafka carries the messaging Hazelcast carried [R7]; content not published", "Open", ""],
+        ["GQ-11", "In SRS mode, are index documents removed when a record is deleted, purged or archived, and how soon?", "Erasure requests and retention depend on it (Section 9.7)", "Not settled; tested as DT-06", "Open", ""],
     ], caption="Gating questions for Pega Support", widths=[1.3, 4.6, 3.6, 3.2, 1.6, 1.3], size=8, label="gq")
     b.callout("important", "Until the answers arrive, the plan assumes the conservative answer for each question: rehearse the "
-              "full path twice, apply the clean-up in Section 10.3, and treat any difference from expected behaviour as a "
+              "full path twice, apply the clean-up in Section 11.3, and treat any difference from expected behaviour as a "
               "stop condition at the first-start Go/No-Go.")
     b.h2("How Helm settings and database settings interact")
     b.p("Pega 26.1.1 gets its stream and search configuration from the Helm chart. A cloned 8.8 database may also hold Dynamic "
@@ -167,12 +170,12 @@ def s10_clone(b):
         ["CD-06", "Broken queue items", "Database (queue processor broken items, shown in Admin Studio)", "Stay broken until requeued or deleted", "Requeue on 26.1.1 runs old work with new rules", "Resolve on 8.8 before the final clone where possible; record counts; decide per queue processor", "B, S", "[R3]"],
         ["CD-07", "Job scheduler state", "Job scheduler rules and their run state", "Job schedulers run on batch nodes after start", "Clone runs production jobs (email, extracts) on first start", "Batch tier at zero in run F; disable jobs that call external systems in non-production before scaling the batch tier", "F", "[R11]"],
         ["CD-08", "Data flow runs, including real-time runs on Kafka data sets", "Data flow landing pages", "Runs restart against 26.1.1 topics or the customer's Kafka", "Runs resume against old offsets or production topics", "Stop or delete runs that refer to 8.8 stream partitions; restart from the agreed point", "F, S", "[R11]"],
-        ["CD-09", "Kafka configuration instances and Kafka data sets for application integrations", "Records > SysAdmin > Kafka; Records > Data Model > Data Set", "Connect to the customer's own Kafka clusters", "A non-production clone reads production topics and moves production consumer offsets", "Repoint to test clusters or disable in every non-production environment; decide per data set in PROD (Section 11.3)", "F", "[R11]"],
+        ["CD-09", "Kafka configuration instances and Kafka data sets for application integrations", "Records > SysAdmin > Kafka; Records > Data Model > Data Set", "Connect to the customer's own Kafka clusters", "A non-production clone reads production topics and moves production consumer offsets", "Repoint to test clusters or disable in every non-production environment; decide per data set in PROD (Section 12.3)", "F", "[R11]"],
         ["CD-10", "Other production endpoints: connectors, listeners, email accounts, file listeners", "Integration rules and data instances", "Run on start if enabled", "A clone calls or polls production systems", "Short checklist owned by the application team; firewall denies production endpoints from non-production", "F", "Customer"],
         ["CD-11", "DSS `delayeditems/dataflowbased/threadspernode`", "DSS", "No longer used in '26", "PEGA0179 alert", "Delete", "A", "[R3]"],
         ["CD-12", "Hazelcast-related settings from 8.8", "DSS and prconfig values", "Hazelcast removed in '25", "Unknown until GQ-03 is answered", "Apply Pega Support's instructions", "B or A", "[R5]"],
         ["CD-13", "Tables without primary keys", "Database", "Required for '25 and later", "Upgrade blocked", "Run primaryKeyUtility as the DBA team plans", "B", "[R10]"],
-        ["CD-14", "Custom search properties and reports that rely on search", "Rules", "Indexed by SRS after the build", "Feature behaves differently on SRS", "List them; include in the functional checks (Section 14.4)", "S", "[R14]"],
+        ["CD-14", "Custom search properties and reports that rely on search", "Rules", "Indexed by SRS after the build", "Feature behaves differently on SRS", "List them; include in the functional checks (Section 15.4)", "S", "[R14]"],
         ["CD-15", "Partition count DSS `prconfig/dsm/services/stream/pyTopicPartitionsCount/default` and per-topic partition changes made on 8.8", "DSS (ruleset Pega-Engine)", "Applies to every topic created at first start [R49]", "Partition count, and so Confluent capacity and cost, differs from the plan", "Record the value; keep or reset to 6 with the performance lead; recount with K-5", "A", "[R49]"],
         ["CD-16", "Pega Diagnostic Center endpoint and settings from production", "Configure > System > Settings", "Clone sends diagnostics to the production PDC endpoint [R51]", "Non-production alerts mixed with production in PDC", "Point each environment at its own PDC endpoint, or clear it", "F", "[R51]"],
     ], caption="Kafka and search items in the cloned database", widths=[1.1, 2.7, 2.5, 2.2, 2.3, 3.2, 0.9, 1.1], size=7, label="inventory")
@@ -199,7 +202,7 @@ def s10_clone(b):
         "upgrade (time point B). The index build then reads only masked data, and no unmasked value reaches OpenSearch, "
         "Kafka topics or logs. If masking runs after the upgrade, it must still finish before run D, because the index build "
         "copies searchable data into OpenSearch. Masking after the index build leaves unmasked data in the indexes until a "
-        "full rebuild. The masking approach is OD-07.")
+        "full rebuild. The masking approach is OD-07. Section 9.2 sets the data class that follows from it for each group.")
     b.callout("note", "Masking rules must keep values that integrations and searches depend on in a usable form, for example "
               "case IDs and keys used in search. Agree the rules with the application team, and include search checks on "
               "masked data in the functional tests.")
@@ -215,7 +218,7 @@ def s11_migration(b):
     b.h2("Treatment per content type")
     b.table(["Content", "Answer", "How it is handled", "Evidence"], [
         ["Pega stream data in Kafka (queue processor messages, data flow partitions)", "Not migrated", "Pega states existing stream data cannot be moved to a new Kafka. 8.8 uses embedded Kafka, so there is no external cluster to drain to. Before the production clone, hold intake on 8.8, wait until queue processors show nothing ready to process, record the counts and any broken items, then stop 8.8. 26.1.1 starts with empty topics that it creates under `pega-prd-`.", "[R13, R25]"],
-        ["Queue items held in the database (delayed, broken)", "Travel with the clone", "Database content, not Kafka content. Handled as items CD-05 and CD-06 (Section 10.3) and tested in rehearsal.", "[R3]"],
+        ["Queue items held in the database (delayed, broken)", "Travel with the clone", "Database content, not Kafka content. Handled as items CD-05 and CD-06 (Section 11.3) and tested in rehearsal.", "[R3]"],
         ["Topic names and configuration", "Not migrated", "26.1.1 creates its own topics under its own prefix. Only the topic settings policy, such as `max.message.bytes`, carries over as configuration.", "[R11, R23]"],
         ["Search indexes (embedded Elasticsearch on 8.8)", "Not migrated", "The indexes live on the 8.8 nodes, not in the database. They are built from the upgraded database after Pega connects to SRS, which needs downtime; the time is measured in rehearsal (Section 7.8). Elasticsearch 8.x snapshots cannot be restored into OpenSearch.", "[R15, R17, R38, R39]"],
         ["Application Kafka data sets on the customer's own topics", "Decided per data set", "Keep the existing cluster and topic, point at a new cluster, or mirror with Confluent Cluster Linking, which keeps offsets. Agree the start offset so messages are neither skipped nor processed twice.", "[R11, R35]"],

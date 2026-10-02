@@ -1,4 +1,4 @@
-"""Sizing calculator: the formulas used in Section 15 and the Excel workbook of Appendix H."""
+"""Sizing calculator: the formulas used in Section 16 and the Excel workbook of Appendix H."""
 import math
 from pathlib import Path
 
@@ -105,7 +105,7 @@ def _readme(wb):
     ws.column_dimensions["A"].width = 120
     lines = [
         ("Pega 26.1.1 on Azure AKS: sizing calculator for Kafka, OpenSearch, AKS and Okta", True),
-        ("Companion to the runbook, Section 15 and Appendix H.", False),
+        ("Companion to the runbook, Section 16 and Appendix H.", False),
         ("", False),
         ("Yellow cells are inputs. Green cells are formulas. Change only the yellow cells.", True),
         ("The example inputs are illustrative. They are not measurements of the customer's system. Replace each one with a measured value.", True),

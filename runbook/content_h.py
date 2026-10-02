@@ -1,4 +1,4 @@
-"""Section 15 (performance engineering and sizing) and Section 18 (observability, monitoring and logging)."""
+"""Section 16 (performance engineering and sizing) and Section 19 (observability, monitoring and logging)."""
 from content_a import GEN, OWN
 import sizing_calc as SC
 
@@ -53,7 +53,7 @@ def s15_perf(b):
     b.figure(GEN + "fig_perf_harness.png", "Performance test harness and measurement points in PERF", OWN, width_cm=13, label="harness")
     b.table(["Point", "What is measured", "Source"], [
         ["M1", "Response time (median, 95th and 99th percentile) and errors per journey", "Load tool"],
-        ["M2", "Pod CPU, memory, heap after GC, GC pause time, HPA events, pod restarts", "Managed Prometheus; GC log (Section 9.2)"],
+        ["M2", "Pod CPU, memory, heap after GC, GC pause time, HPA events, pod restarts", "Managed Prometheus; GC log (Section 10.2)"],
         ["M3", "Bytes in and out, requests, connections, consumer lag and throttling per service account", "Confluent Metrics API [R56]"],
         ["M4", "Ready to process, throughput and broken items per queue processor", "Admin Studio"],
         ["M5", "SRS response time and errors; OpenSearch query latency, indexing rate, rejected requests", "SRS logs; provider metrics"],
@@ -65,7 +65,7 @@ def s15_perf(b):
         "Use the customer's standard load tool, for example Apache JMeter or Gatling. Run the generators on their own VMs or node pool in a separate subnet, never on the Pega node pools, and enter through Application Gateway so the path matches production.",
         "Record scripts against 26.1.1, not 8.8. Pega UI requests carry session-specific values that must be correlated in the script; a script recorded on 8.8 will fail or produce false errors.",
         "Drive Kafka and search through Pega. Direct load on Confluent or OpenSearch does not show how Pega uses them. A short `kafka-producer-perf-test` run from a Pega namespace pod is useful only as a baseline for the Private Link path.",
-        "Use the full-size masked clone. Take a database snapshot before the first test and restore it between test cycles, then refresh topics and indexes as in Section 19.3, so each cycle starts from the same state.",
+        "Use the full-size masked clone. Take a database snapshot before the first test and restore it between test cycles, then refresh topics and indexes as in Section 20.3, so each cycle starts from the same state.",
         "Synchronize all clocks to UTC and label each run with a run ID in the load tool, in Grafana annotations and in the test log, so measurements from every source can be lined up.",
         "Agree each test with the identity team. All environments share one Okta org, and load tests add token requests to the org's rate limit [R52].",
     ])
@@ -74,7 +74,7 @@ def s15_perf(b):
     b.table(["Criteria", "Detail"], [
         ["Entry", ["PERF built at full size with the PROD cluster type and OpenSearch size; full index build complete.",
                    "Workload model and targets approved by the business owner.",
-                   "Dashboards for M1 to M6 live (Section 18.4); synthetic checks green.",
+                   "Dashboards for M1 to M6 live (Section 19.4); synthetic checks green.",
                    "PREPROD activity scheduled away from the test window (Section 5.4)."]],
         ["Exit", ["Load, soak and spike tests pass at the design peak; stress test shows at least 150 % headroom.",
                   "No Confluent throttling at peak; consumer lag returns to baseline within the agreed time.",
@@ -138,7 +138,7 @@ def app_h_calculator(b):
     b.h1("Sizing calculator", appendix="H")
     b.p("The sizing calculator is the Excel workbook `Pega_26_Sizing_Calculator.xlsx`, issued with this document. It "
         "applies the rules in {ref:tab_sizing_rules} and {ref:tab_os_formulas} with live formulas. Yellow cells are inputs and "
-        "green cells are formulas. The example inputs are illustrative, as in Section 15.9, and must be replaced with "
+        "green cells are formulas. The example inputs are illustrative, as in Section 16.9, and must be replaced with "
         "measured values.")
     b.table(["Sheet", "Inputs", "Outputs", "Sources of constants"], [
         ["Kafka", "Per group: cluster type, peak ingress and egress, measured partitions, headroom, connections, requests per second", "Units needed by each limit; capacity units; the limit that sets them; warnings above 10 and 32 eCKU", "[R31, R49]"],
@@ -164,20 +164,23 @@ def app_h_calculator(b):
 
 
 ALERTS = [
-    ["Stream service status", "Pega (Stream landing page, alerts)", "Not NORMAL", "P1 in PROD", "Section 17.2"],
+    ["Stream service status", "Pega (Stream landing page, alerts)", "Not NORMAL", "P1 in PROD", "Section 18.2"],
     ["Queue backlog", "Pega Admin Studio", "Ready to process grows for longer than the agreed period", "P2", "Check batch tier and consumer errors"],
     ["Broken queue items", "Pega Admin Studio", "Above zero for business-critical processors", "P2", "Investigate and requeue"],
-    ["Consumer lag and request errors per principal", "Confluent Metrics API [R56]", "Lag above baseline; authentication or authorization errors", "P2", "Section 17.2"],
+    ["Delayed queue items", "Pega Admin Studio", "Growing for longer than 15 minutes", "P2", "Check Kafka reachability (DF-01, Section 9.8)"],
+    ["Search indexer broken items", "Pega Admin Studio, `pySASIncrementalIndexer` [R70]", "Above zero", "P2", "Read the error type; fix; requeue (DF-06 to DF-08)"],
+    ["Lag drain time against retention", "Lag and consume rate from the Metrics API [R56]; `retention.ms` (DP-5)", "Time to drain the lag above 25 % of the topic retention", "P1", "Add consumers within the partition count; stop the cause (DF-05)"],
+    ["Consumer lag and request errors per principal", "Confluent Metrics API [R56]", "Lag above baseline; authentication or authorization errors", "P2", "Section 18.2"],
     ["Client throttling", "Metrics API `client_limit_milliseconds` by principal [R56]", "Above zero for 5 minutes", "P2", "Find the limit hit ({ref:tab_cc_limits})"],
     ["Connections per cluster", "Confluent Metrics API [R56]", "Above 70 % of the cluster's connection limit", "P3", "Capacity review"],
     ["Partition count per cluster", "Confluent Metrics API", "Above 70 % of the cluster limit", "P3", "Capacity review (Section 6.7)"],
     ["Throughput per service account", "Confluent Metrics API [R36]", "At quota for longer than 15 minutes", "P3", "Review quota or schedule"],
-    ["SRS errors, latency and restarts", "SRS logs; pod metrics", "Above baseline; any restart loop", "P2", "Section 17.3"],
-    ["OpenSearch health", "Provider metrics", "Yellow for longer than 30 minutes; red at once", "P2 / P1", "Section 17.3"],
+    ["SRS errors, latency and restarts", "SRS logs; pod metrics", "Above baseline; any restart loop", "P2", "Section 18.3"],
+    ["OpenSearch health", "Provider metrics", "Yellow for longer than 30 minutes; red at once", "P2 / P1", "Section 18.3"],
     ["OpenSearch disk", "Provider metrics", "Above the low watermark less 10 points", "P2", "Add storage"],
-    ["Okta token failures", "Pega log; Okta System Log", "Any repeated failure", "P2", "Section 17.3"],
+    ["Okta token failures", "Pega log; Okta System Log", "Any repeated failure", "P2", "Section 18.3"],
     ["Okta rate limit", "Okta System Log warning and violation events [R52]", "Any warning; any violation", "P2 / P1", "Find the caller; Section 7.6"],
-    ["Pod health", "Managed Prometheus", "OOMKilled, restart loop, HPA at maximum for 15 minutes", "P2", "Section 9.2"],
+    ["Pod health", "Managed Prometheus", "OOMKilled, restart loop, HPA at maximum for 15 minutes", "P2", "Section 10.2"],
     ["Zone spread", "Managed Prometheus", "More than half of a tier's pods in one zone", "P3", "Section 4.6"],
     ["Long GC pauses", "GC log", "Pauses above 2 seconds, or GC time above 10 % of an interval", "P3", "Heap review"],
     ["External secret sync", "External Secrets Operator status", "Any ExternalSecret not SecretSynced", "P2", "Section 8"],
@@ -197,15 +200,15 @@ def s18_observability(b):
     b.h2("Telemetry sources")
     b.table(["Source", "Telemetry", "Collection", "Store", "Notes"], [
         ["Pega web and batch pods", "PegaRULES and ALERT logs on stdout; GC log file", "Azure Monitor agent container log collection [R60]", "Log Analytics", "GC file tailed by the agent [R23]"],
-        ["Pega Platform", "Health, alerts, exceptions, guardrail data", "Pega Diagnostic Center [R51]", "PDC", "Section 18.3"],
+        ["Pega Platform", "Health, alerts, exceptions, guardrail data", "Pega Diagnostic Center [R51]", "PDC", "Section 19.3"],
         ["AKS", "Node, pod, HPA and control-plane metrics", "Managed Prometheus [R60]", "Azure Monitor workspace", "Grafana dashboards"],
         ["Confluent Cloud", "Throughput, requests, connections, lag, throttling, by principal", "Metrics API `/export` endpoint in Prometheus format, scraped every minute [R56]", "Azure Monitor workspace", "Needs a Cloud API key for a service account with the MetricsViewer role. The Metrics API addresses are not static, so allow it by FQDN"],
         ["Confluent audit log", "Authentication, ACL and management events", "Consumer on topic `confluent-audit-log-events` in the audit log cluster [R57]", "SIEM", "Kept 7 days by default; export for longer retention"],
-        ["OpenSearch", "Cluster health, nodes, disk, latency; slow logs; audit logs", "Provider export", "Log Analytics", "Section 18.2"],
+        ["OpenSearch", "Cluster health, nodes, disk, latency; slow logs; audit logs", "Provider export", "Log Analytics", "Section 19.2"],
         ["SRS pods", "Application logs on stdout", "Azure Monitor agent", "Log Analytics", "Request errors and latency"],
         ["Okta", "System Log: token issue, failures, rate-limit events", "Okta log streaming or System Log API to the SIEM", "SIEM", "Rate-limit events [R52]"],
         ["Azure Firewall", "Allowed and denied flows", "Diagnostic settings", "Log Analytics", "IT-09, IT-10 evidence"],
-        ["Synthetic checks", "DNS, TLS, Kafka metadata, SRS and token checks", "CronJob per namespace", "Log Analytics and metrics", "Section 18.6"],
+        ["Synthetic checks", "DNS, TLS, Kafka metadata, SRS and token checks", "CronJob per namespace", "Log Analytics and metrics", "Section 19.6"],
     ], caption="Telemetry sources", widths=[2.6, 3.6, 4, 2.4, 4], size=8)
 
     b.h2("Logging design")
@@ -213,7 +216,7 @@ def s18_observability(b):
         "**One label everywhere.** The namespace carries the environment code (`pega-<code>`, `srs-<code>`). Add the code as a label to Confluent and OpenSearch metrics at scrape time, so a dashboard can filter one environment on a shared group.",
         "**Workspaces.** Use one Log Analytics workspace for non-production and one for production. Production logs never go to a non-production workspace. Set retention per the customer's policy, for example 30 days interactive in non-production and 90 days in production with archive after that.",
         "**Log levels.** Keep Pega and SRS at their default levels in PROD. Raise a level for one logger and one pod for a set time when Pega Support asks, then return it. A custom `prlog4j2` file can be supplied through the chart if the default layout does not suit the log platform [R23].",
-        "**Sensitive data.** Non-production logs come from masked clones only. Never log the JAAS value, tokens or private keys; the pipeline secret scan covers values files, and log queries for `password=` and `Bearer ` run weekly.",
+        "**Sensitive data.** Non-production logs come from masked clones only. Never log the JAAS value, tokens or private keys; the pipeline secret scan covers values files, and log queries for `password=` and `Bearer ` run weekly, together with queries for the customer's personal data patterns (DT-10). Slow logs and heap dumps follow the rules in Section 9.6.",
         "**OpenSearch slow logs.** Use the cluster-level search request slow log, available from OpenSearch 2.12, rather than per-index shard slow logs [R58]. It needs no change to index settings, which SRS owns (Section 7.4).",
         "**Confluent audit log.** The default 7-day retention is too short for incident review [R57]. Stream it to the SIEM.",
     ])

@@ -1,4 +1,4 @@
-"""Sections 12 to 14: deployment runbook, production cutover and rollback, testing."""
+"""Sections 13 to 15: deployment runbook, production cutover and rollback, testing."""
 from content_a import GEN, PUB, OWN
 import envs as E
 
@@ -15,6 +15,7 @@ def s12_deploy(b):
         "from Appendix A, and commands from Appendix C.")
     b.h2("Build order")
     b.table(["Phase", "Component", "Scope", "Depends on", "Owner"], [
+        ["0", "Data classification and key decisions (OD-14 to OD-18); AKS node pools with encryption at host and three zones", "Per group", "Landing zone", "Security architect, platform team"],
         ["1", "Network and DNS: private endpoint subnet, firewall rules, private DNS zones", "Per group and per environment", "Landing zone", "Cloud architect"],
         ["2", "Key Vault, External Secrets Operator identity, Okta authorization server and client", "Per environment", "Phase 1", "Platform team, identity team"],
         ["3", "Confluent cluster and Private Link; service account, ACLs, quota, API key", "Cluster per group; rest per environment", "Phases 1, 2", "Kafka engineer"],
@@ -33,10 +34,18 @@ def s12_deploy(b):
     ])
     b.h2("Secrets and identity")
     _steps_table(b, "Secrets and identity steps", [
-        ["SI-1", "Create `kv-pega-<code>` with RBAC, private endpoint and public access disabled.", "Platform team", "Reachable from the spoke only", "Test output"],
+        ["SI-1", "Create `kv-pega-<code>` with RBAC, private endpoint and public access disabled. A self-managed Confluent key, if OD-14 requires one, goes in a separate key-only vault (Section 9.5).", "Platform team", "Reachable from the spoke only", "Test output"],
         ["SI-2", "Create the workload identity for the External Secrets Operator in `pega-<code>` and `srs-<code>`; grant Key Vault Secrets User on this vault only.", "Platform team", "SecretStore Ready", "kubectl output (P-4)"],
         ["SI-3", "Create the Okta client `pega-srs-<code>` and register its public key (Section 7.6); store the private key in Key Vault.", "Identity team", "Token request succeeds (O-1)", "Decoded claims (O-2)"],
         ["SI-4", "Create the ExternalSecrets in Section 8.2.", "Platform team", "All secrets SecretSynced", "kubectl output"],
+    ])
+    b.h2("Data protection")
+    _steps_table(b, "Data protection steps", [
+        ["DA-1", "Confirm the data class of the environment and its group (OD-15) and the at-rest decisions (OD-14, OD-18) before any shared service or node pool is created.", "Security architect", "Decisions recorded", "Decision log"],
+        ["DA-2", "Create node pools with encryption at host and zones 1, 2 and 3 (Section 9.5).", "Platform team", "DP-6 shows `True` for every pool", "Command output"],
+        ["DA-3", "For a group with a self-managed Confluent key, create the key and its key-only vault, register it with Confluent, and create the cluster in self-managed mode [R74].", "Kafka engineer, security architect", "Cluster shows self-managed encryption", "Console screenshot"],
+        ["DA-4", "Load the approved list of indexed properties and the queue snapshot inventory (OD-17, DT-01) for the application release.", "Pega LSA", "Lists signed by the data owner", "Signed lists"],
+        ["DA-5", "After the first start and the index build, run DT-02, DT-03, DT-05 and DT-11.", "Platform team, search engineer", "All pass", "Test record"],
     ])
     b.h2("Confluent Cloud")
     _steps_table(b, "Confluent Cloud steps", [
@@ -68,7 +77,7 @@ def s12_deploy(b):
         ["DB-5", "If the installer job fails, read the log, fix the cause, and follow Pega's guidance for rerunning the upgrade on this database. If in doubt, restore the clone and start again from DB-1 (FS-26).", "Platform team, DBA", "Rerun completes", "Incident record"],
     ])
     b.h2("First start, index build and intake release")
-    b.p("Follow the first-start control in Section 10.4 (steps ST-1 to ST-9). The Helm commands are:")
+    b.p("Follow the first-start control in Section 11.4 (steps ST-1 to ST-9). The Helm commands are:")
     b.code("""# Run F: web tier only, batch tier held at zero
 helm upgrade --install pega pega/pega -n pega-<code> -f pega-<code>-first.yaml \\
   --version 4.13.0
@@ -82,7 +91,7 @@ helm upgrade --install pega pega/pega -n pega-<code> -f pega-<code>-deploy.yaml 
         ["UAT", "Recent production copy", "Yes", "NP1", "Business tests on search over masked data."],
         ["PERF", "Full-size production copy", "Yes", "NP2", "Load tests, partition and index build measurements; sets PROD sizes."],
         ["PREPROD", "Most recent full-size production copy", "Per policy", "NP2", "Rehearsal 1 and Rehearsal 2 of the production cutover, run by the cutover team."],
-        ["PROD", "Final clone at cutover", "No", "PRD", "Section 13."],
+        ["PROD", "Final clone at cutover", "No", "PRD", "Section 14."],
     ], caption="Per-environment notes", widths=[2.2, 3.6, 1.6, 2, 7.2], size=8.5)
     b.h2("Building the environments one after another")
     b.p("The environments are built in waves, shown in {ref:fig_waves}. Each wave reuses what the earlier waves proved and "
@@ -93,9 +102,9 @@ helm upgrade --install pega pega/pega -n pega-<code> -f pega-<code>-deploy.yaml 
         ["0", "Foundations", "Landing zone, hub firewall rules, private DNS zones, registry, pipelines, both Okta authorization servers, monitoring workspaces", "None", "Connectivity checks from a test pod; pipeline renders all values files"],
         ["1", "DEV", "cc-np1 with Private Link and DNS; os-np1 with cluster settings", "All objects in phases 2 to 7 of the build order", "First-start Go/No-Go; Okta claim, index-scoped role, DSS precedence (FS-24), GQ-08 behaviour and SRS key rotation (FS-33) recorded (M2)"],
         ["2", "SIT, then UAT", "None", "Namespace, vault, Okta client, service account, ACLs, quota, SRS user, SRS, clone", "IT-01 to IT-10 between DEV, SIT and UAT"],
-        ["3", "PERF", "cc-np2 and os-np2 at the PROD type and size", "Same as wave 2, plus load test harness", "Load tests and sizing (Section 15); PROD sizes and cluster type agreed (M3)"],
+        ["3", "PERF", "cc-np2 and os-np2 at the PROD type and size", "Same as wave 2, plus load test harness", "Load tests and sizing (Section 16); PROD sizes and cluster type agreed (M3)"],
         ["4", "PREPROD", "None", "Same as wave 2", "Two timed rehearsals; isolation from PERF (M4, M5)"],
-        ["5", "PROD", "cc-prd, os-prd, PROD Okta authorization server, kv-pega-prd", "Same as wave 2, from the final clone", "Go/No-Go gates in Section 13.4"],
+        ["5", "PROD", "cc-prd, os-prd, PROD Okta authorization server, kv-pega-prd", "Same as wave 2, from the final clone", "Go/No-Go gates in Section 14.4"],
     ], caption="Environment build waves", widths=[1.2, 2.2, 4.4, 4.4, 4.4], size=8, label="waves")
     b.p("{ref:tab_env_checklist} lists what must be configured for each new environment, whichever wave it is in. Keep one "
         "completed copy per environment with the evidence.")
@@ -109,9 +118,10 @@ helm upgrade --install pega pega/pega -n pega-<code> -f pega-<code>-deploy.yaml 
         ["SRS release and network policy", "`srs-<code>`, URL with `:8443`", "SR-1 to SR-3", "S-5"],
         ["customerDeploymentId", "`pega26-<code>`", "Values file", "Pipeline naming check; IT-05"],
         ["Firewall and DNS", "Own Confluent and OpenSearch endpoints, Okta, deny production", "NW-4, NW-5", "IT-09"],
+        ["Data class and encryption", "Class per OD-15; encryption at host; Confluent key mode", "DA-1 to DA-3", "DP-6; DT-11"],
         ["Clone, masking, upgrade", "Clone date and masking report", "DB-1 to DB-5", "Installer log"],
-        ["Clean-up CD-01 to CD-16", "Clean-up record", "Section 10.3", "Signed record"],
-        ["Monitoring", "Dashboards and alerts with the environment label", "Section 18", "Test alert received"],
+        ["Clean-up CD-01 to CD-16", "Clean-up record", "Section 11.3", "Signed record"],
+        ["Monitoring", "Dashboards and alerts with the environment label", "Section 19", "Test alert received"],
         ["Measurements", "Partitions, index size, build time, token rate, connections", "Appendix A", "Values recorded"],
     ], caption="Configuration checklist for each new environment", widths=[3.8, 5, 3.4, 4.4], size=8, label="env_checklist")
 
@@ -132,7 +142,7 @@ def s13_cutover(b):
         ["M3 PERF measurements", "Load tests, partitions, index build time", "PROD sizes and cluster type agreed (OD-02)"],
         ["M4 Rehearsal 1 (PREPROD)", "Full cutover sequence with timings", "All steps completed; defects logged"],
         ["M5 Rehearsal 2 (PREPROD)", "Full cutover sequence by the cutover team", "Timing fits the window; no open severity 1 or 2 defects"],
-        ["M6 Go/No-Go 1 and production cutover", "Section 13.3", "Go/No-Go 3 passed"],
+        ["M6 Go/No-Go 1 and production cutover", "Section 14.3", "Go/No-Go 3 passed"],
     ], caption="Programme milestones used in this document", widths=[4, 6, 6.6], size=9)
     b.h2("Cutover sequence")
     b.figure(GEN + "fig_cutover_timeline.png", "Production cutover sequence from the Kafka and search point of view", OWN, width_cm=16.5)
@@ -144,7 +154,7 @@ def s13_cutover(b):
         ["C-5", "Apply time-point A clean-up; run F; time-point F checks (ST-2 to ST-6).", "Pega LSA", "Rehearsal", "Clean-up record, screenshots"],
         ["C-6", "Go/No-Go at first start ({ref:fig_gonogo}).", "Cutover manager", "Fixed", "Gate record"],
         ["C-7", "Run D; full index build; completeness and count checks (ST-7, ST-8).", "Pega LSA", "Rehearsal", "Count sheet"],
-        ["C-8", "Application Kafka data sets cutover (Section 13.5).", "Application team", "Rehearsal", "Offset evidence"],
+        ["C-8", "Application Kafka data sets cutover (Section 14.5).", "Application team", "Rehearsal", "Offset evidence"],
         ["C-9", "Smoke tests; Go/No-Go 2.", "Test lead", "Rehearsal", "Test report, gate record"],
         ["C-10", "Switch public DNS to Application Gateway; release intake (ST-9); Go/No-Go 3 after 30 minutes.", "Platform team", "DNS TTL", "DNS change record"],
     ], caption="Production cutover steps", widths=[1.1, 8.4, 2.5, 2, 2.6], size=8.5)
@@ -187,10 +197,10 @@ def s14_testing(b):
     b.table(["Stage", "Entry criteria", "Environment", "Owner", "Evidence"], [
         ["Connectivity", "Network, DNS and secrets steps done", "Every environment", "Platform team", "K-1 to K-3, S-1 to S-3, O-1 outputs"],
         ["Configuration", "Run F complete", "Every environment", "Pega LSA", "Landing page screenshots; inventory sign-off"],
-        ["Functional", "Run D and index build complete", "DEV, SIT, UAT", "Test lead", "Checks in Section 14.4"],
+        ["Functional", "Run D and index build complete", "DEV, SIT, UAT", "Test lead", "Checks in Section 15.4"],
         ["Isolation", "Two environments in a group running", "NP1, NP2", "Security architect", "IT-01 to IT-10 records"],
         ["Performance", "PERF built at full size", "PERF", "Performance lead", "PT-01 to PT-04 reports"],
-        ["Resilience and failure", "Performance baseline recorded", "PERF, PREPROD", "Platform team", "Failure catalogue records (Section 14.6)"],
+        ["Resilience and failure", "Performance baseline recorded", "PERF, PREPROD", "Platform team", "Failure catalogue records (Section 15.6)"],
         ["Security", "Isolation tests passed", "SIT, PREPROD", "Security architect", "No public endpoints; secret scan of values; token claim checks; TLS versions"],
         ["Operational acceptance", "Monitoring live", "PREPROD", "Operations lead", "Alerts reach on-call; runbooks used by operations staff"],
         ["Full rehearsal", "All above passed", "PREPROD (twice)", "Cutover manager", "Timed cutover record (Appendix D)"],
@@ -234,7 +244,7 @@ def s14_testing(b):
         "Check the produce path with a message near 5,000,000 bytes, if the application produces large messages (FS-06).",
     ])
     b.h2("Performance tests")
-    b.p("These are the acceptance tests for Kafka and search. Section 15 gives the workload model, the full set of test "
+    b.p("These are the acceptance tests for Kafka and search. Section 16 gives the workload model, the full set of test "
         "types, the harness and the entry and exit criteria they run under.")
     b.table(["ID", "Test", "Target", "Measured"], [
         ["PT-01", "Peak user load plus peak queue processor load in PERF", "Agreed response times; consumer lag returns to baseline after peak", ""],
@@ -258,7 +268,7 @@ def s14_testing(b):
         ["FS-09", "One SRS pod lost", "Delete one SRS pod in PERF", "Searches continue on other pods", "Pod restart event", "Kubernetes recreates it", "No search errors seen by users"],
         ["FS-10", "Whole SRS deployment lost", "Scale SRS to zero in PERF", "Search and indexing fail; other functions continue", "Search errors; SRS alert", "Scale back; check indexing backlog clears", "Backlog cleared; counts match"],
         ["FS-11", "Okta token cannot be obtained", "Block `<okta-domain>` at the firewall for the environment", "Search fails once the current token expires", "Pega log token errors", "Restore the rule", "Search resumes without restart, or with restart recorded"],
-        ["FS-12", "Token from the wrong issuer", "Configure a test client on another authorization server", "SRS refuses if it checks issuer; record result", "SRS log", "Use the right server", "Behaviour recorded in Section 20.4"],
+        ["FS-12", "Token from the wrong issuer", "Configure a test client on another authorization server", "SRS refuses if it checks issuer; record result", "SRS log", "Use the right server", "Behaviour recorded in Section 21.4"],
         ["FS-13", "`guid` does not match customerDeploymentId", "Change the claim value for the DEV client", "SRS refuses requests", "401 or 403 in SRS log", "Restore the claim", "Search resumes"],
         ["FS-14", "Client key rotated in Okta but not in Key Vault", "Remove the current public key from the DEV client", "Token requests fail", "Okta system log; Pega log", "Register the key or update Key Vault and restart", "Search resumes"],
         ["FS-15", "OpenSearch status yellow", "Stop one data node (provider tooling) in PERF", "Searches continue", "S-2 yellow; alert", "Provider restores the node", "Green; no Pega errors"],
@@ -305,5 +315,6 @@ def s14_testing(b):
         ["AC-3", "All failure scenarios have been run at least once with results recorded; any defect is fixed or accepted by the business owner."],
         ["AC-4", "Performance results meet the targets agreed by the business owner."],
         ["AC-5", "Two PREPROD rehearsals completed, with the measured window within the agreed outage."],
-        ["AC-6", "Monitoring and alerts in Section 18.5 are live and tested."],
+        ["AC-6", "Monitoring and alerts in Section 19.5 are live and tested."],
+        ["AC-7", "Data tests DT-01 to DT-12 pass, and the data security officer has accepted the data inventory, the classification and the at-rest decisions in Section 9."],
     ], caption="Acceptance criteria", widths=[1.4, 15.2], size=9)

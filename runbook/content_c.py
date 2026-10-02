@@ -37,6 +37,9 @@ def s7_search(b):
         ["Private endpoint into the customer VNet", "Mandatory", "", "", "", "Yes"],
         ["Customer can set `action.auto_create_index` and `action.destructive_requires_name` [R14]", "Mandatory", "", "", "", "Yes"],
         ["Fine-grained access control with index patterns [R40, R41]", "Mandatory", "", "", "", "Yes"],
+        ["Encryption at rest for data and snapshots; HTTPS only on the REST layer; TLS between nodes [R76]", "Mandatory", "", "", "", "Yes"],
+        ["Audit logging available to the customer [R77]", "Mandatory", "", "", "", "Yes"],
+        ["Customer-managed encryption key", "Scored", "10", "", "", ""],
         ["Snapshots with customer-chosen retention", "Scored", "15", "", "", ""],
         ["Support terms and response times for PROD", "Scored", "20", "", "", ""],
         ["Metrics export to Azure Monitor", "Scored", "15", "", "", ""],
@@ -85,7 +88,7 @@ def s7_search(b):
         "**Searchable data volume.** Measure it from the first upgraded clone: run the full index build in DEV and record index sizes with `_cat/indices` (command S-4). Scale PROD storage from that, plus growth and one rebuild's working space.",
         "**Shards and replicas.** SRS creates and names the indexes itself [R14]. After the first build, read the shard and replica count of each index with `_cat/indices` and record it in Appendix A. Do not change index settings directly unless Pega Support advises it.",
         "**Shard budget.** Add up the shards of every environment on the service and compare with the provider's per-node shard limit.",
-        "**Disk watermarks.** Record the provider's low, high and flood-stage watermark values in Appendix A, and alert before the low watermark is reached (Section 18.5). At the flood stage, indexes become read-only and indexing stops (FS-17).",
+        "**Disk watermarks.** Record the provider's low, high and flood-stage watermark values in Appendix A, and alert before the low watermark is reached (Section 19.5). At the flood stage, indexes become read-only and indexing stops (FS-17).",
     ])
     b.h3("Sizing formulas")
     b.p("Pega does not publish a storage or shard formula for SRS. The formulas below are the general OpenSearch sizing "
@@ -130,7 +133,7 @@ def s7_search(b):
         - "<index action group confirmed in DEV, for example indices_all>"
 """, title="Index-scoped role for one environment's SRS user (OpenSearch roles.yml format [R40, R41])")
     b.p("When an environment is refreshed or retired, delete its indexes with `DELETE /pega26-<code>*` as the environment's own "
-        "SRS user, which cannot touch any other environment's indexes (Sections 19.3 and 19.4).")
+        "SRS user, which cannot touch any other environment's indexes (Sections 20.3 and 20.4).")
     b.h2("Pega-to-SRS tokens with Okta")
     b.p("Pega obtains a token with the OAuth client credentials grant, authenticating with `private_key_jwt` or "
         "`client_secret_basic`, and asks for the scope `pega.search:full` [R16, R23]. SRS checks the token signature with the "
@@ -193,7 +196,7 @@ app.clientId == "<ppd-client-id>"  ? "pega26-ppd"  : "none\"""", title="Claim va
         "**Signing keys.** Okta rotates the signing keys of an authorization server about four times a year, and clients must look the key up from the key set URL by its `kid` rather than keep a fixed copy [R53]. SRS must therefore read `OAuthPublicKeyURL` dynamically. Prove it in DEV by rotating the authorization server's keys manually, as Okta allows, and checking that search continues without an SRS restart (FS-33). If the test fails, rotation becomes a planned event with an SRS restart, and the authorization server's key rotation mode is set to manual.",
         "**Rate limits.** Okta applies rate limits per org and per endpoint. A request over the limit receives HTTP 429, and Okta writes warning and violation events to the System Log [R52]. All six environments share the customer's Okta org, so every non-production token request draws on the same limit as production. The key set and discovery endpoints are not the concern; the token endpoint is.",
         "Measure token requests per minute per environment in DEV and under load in PERF (from the System Log), then compare the sum across all environments with the org's published limit for the token endpoint. Keep the token lifetime long enough that Pega does not request a token on each call.",
-        "Forward Okta System Log rate-limit warnings and violations to the monitoring service (Section 18.5). A warning means another application in the org, or a misbehaving environment, is close to blocking search for every environment.",
+        "Forward Okta System Log rate-limit warnings and violations to the monitoring service (Section 19.5). A warning means another application in the org, or a misbehaving environment, is close to blocking search for every environment.",
     ])
     b.h2("SRS deployment (backingservices chart)")
     b.p("Each environment has its own SRS release in namespace `srs-<code>`. The keys come from the SRS chart README [R24].")
@@ -261,7 +264,7 @@ srs:
     b.p("After Pega connects to SRS, SRS indexes all searchable data, and Pega states that this needs a downtime period. The "
         "length depends on the data model, the resources given to Pega and SRS, the number of queue processors and the amount "
         "of searchable data [R15]. For a cloned environment, the build runs during the first start with intake held "
-        "(Section 10.4), so its length sets part of the production outage.")
+        "(Section 11.4), so its length sets part of the production outage.")
     b.steps([
         "In every rehearsal, record the start and end of the build, the number of batch pods, SRS replicas and OpenSearch data nodes, and the row counts of the main indexed classes.",
         "Plot build time against searchable data volume across DEV, PERF and PREPROD. PREPROD, built from a recent full-size clone on production-like services, is the best predictor.",

@@ -6,7 +6,7 @@ digraph G {
 
 
   rankdir=TB;
-  start [label="Item found in the cloned database (Section 10.3)", fillcolor="#DCE6F2"];
+  start [label="Item found in the cloned database (Section 11.3)", fillcolor="#DCE6F2"];
   q1 [shape=diamond, style="filled", fillcolor="#FFF2CC", label="Does it point to a Kafka,\nsearch or other endpoint\noutside this environment?", margin="0.04,0.04", fontsize=9.5];
   q2 [shape=diamond, style="filled", fillcolor="#FFF2CC", label="Does Pega 26.1.1 replace\nit with Helm or SRS\nconfiguration?", margin="0.04,0.04", fontsize=9.5];
   q3 [shape=diamond, style="filled", fillcolor="#FFF2CC", label="Does Pega document\nit as removed in\n'25 or '26?", margin="0.04,0.04", fontsize=9.5];

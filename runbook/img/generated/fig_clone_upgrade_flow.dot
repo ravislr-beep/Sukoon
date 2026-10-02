@@ -15,7 +15,7 @@ digraph G {
   np [shape=diamond, style="filled", fillcolor="#FFF2CC", label="Non-production\nenvironment?", margin="0.04,0.04", fontsize=9.5];
   mask [label="2 Mask personal data\n(customer masking policy)", fillcolor="#FCE4D6"];
   upg [label="3 Installer job: action upgrade\nupgradeType per Pega Support (GQ-04)", fillcolor="#DCE6F2"];
-  clean [label="4 Clean-up and checks of cloned\nKafka and search items (Section 10.3)", fillcolor="#FFF2CC"];
+  clean [label="4 Clean-up and checks of cloned\nKafka and search items (Section 11.3)", fillcolor="#FFF2CC"];
   dep [label="5 Deploy 26.1.1 tiers: own prefix,\nservice account, customerDeploymentId\nbatch tier at zero, intake held", fillcolor="#DCE6F2"];
   chk [label="6 Stream and search landing pages,\nqueue processors, cloned items", fillcolor="#FFF2CC"];
   idx [label="7 Scale batch tier; full index build\nthrough SRS into OpenSearch", fillcolor="#E4DFEC"];
