@@ -1,6 +1,6 @@
 # Master prompt: Pega Platform 26.1.1 on Azure AKS with Confluent Cloud Kafka and managed OpenSearch, built from a cloned and upgraded Pega 8.8 database
 
-Version 3.0. Use this prompt as the complete brief for producing the customer document. Every instruction in it is mandatory unless it says "should".
+Version 3.1. Use this prompt as the complete brief for producing the customer document. Every instruction in it is mandatory unless it says "should".
 
 ---
 
@@ -34,11 +34,14 @@ The customer is upgrading an existing Pega Platform 8.8 system. They are not upg
 
 The document covers the **Kafka and search part of this programme, end to end**:
 
-1. Designing and configuring Confluent Cloud and managed OpenSearch for Pega 26.1.1 in every environment. Use DEV, SIT, UAT, PERF or pre-production, and PROD unless the customer gives others, and list the assumed set in the scope section.
+1. Designing and configuring Confluent Cloud and managed OpenSearch for Pega 26.1.1 in each of the six environments: DEV, SIT, UAT, PERF, PREPROD and PROD (section 2.5).
 2. Configuring both in the **Pega Helm charts** (`pega` chart `stream` and `pegasearch` sections; `backingservices` chart for SRS) as part of the 26.1.1 deployment. Do not describe configuring them afterwards in the Pega UI, except for checks and settings that only exist there.
 3. **What the cloned 8.8 database brings with it** that affects Kafka and search, and what must be changed, removed or checked before and after the first 26.1.1 start (section 4).
 4. Whether Kafka topics and search indexes must be migrated from 8.8, and how in-flight 8.8 work is handled at cutover (section 5).
-5. **Sharing services in non-production.** One Confluent Cloud cluster and one OpenSearch service serve all non-production environments, with strict isolation between them, to reduce cost. Production has its own Kafka cluster and its own OpenSearch service. If you recommend a different split, explain why with evidence.
+5. **Sharing services in non-production**, with strict isolation between environments, to reduce cost. Production always has its own Kafka cluster and its own OpenSearch service. Work out the non-production split with a decision diagram and the cost model, starting from this default:
+   - **Shared group 1, functional:** DEV, SIT and UAT share one Confluent cluster and one OpenSearch service.
+   - **Shared group 2, production-like:** PERF and PREPROD share a second Confluent cluster and OpenSearch service of the same type, settings and private networking as production. Load tests and production rehearsals then run on production-like services without affecting the functional environments. PERF and PREPROD runs are scheduled so they do not overlap.
+   - Also assess the alternatives: all five non-production environments on one shared set, or PREPROD on its own set. Recommend one option, and give the reasons.
 6. Testing, failure scenarios, known issues, troubleshooting and operations for Kafka and search.
 
 ### 2.3 Covered only as dependencies
@@ -59,6 +62,19 @@ Describe each of these only to the depth needed to show how it affects Kafka and
 - Constellation.
 - Pega Diagnostic Center beyond the connectivity it needs.
 - General AKS build-out not related to Kafka or search.
+
+### 2.5 Confirmed customer inputs
+
+Use these facts throughout. Do not present them as assumptions.
+
+| Input | Value | What it means for the document |
+|---|---|---|
+| Environments | DEV, SIT, UAT, PERF, PREPROD, PROD | Six columns in every per-environment table, plus six prefixes, six service accounts, six `customerDeploymentId` values, six OAuth clients and six sets of Key Vault secrets. |
+| 8.8 Kafka | Embedded Kafka (the Pega stream service running inside 8.8) | Nothing in embedded Kafka can be moved to Confluent Cloud. 8.8 queues are emptied by stopping intake and letting processing finish before the final clone. The Stream Migration activity is a tool for switching a running 8.8 to an external Kafka, which this programme does not do. Explain why it is not used. The cloned database carries 8.8 stream settings and stream node records that must be cleaned up (section 4.2). |
+| 8.8 search | Embedded Elasticsearch | The 8.8 indexes live on the 8.8 search nodes' disks, not in the database, so they cannot be carried over. 26.1.1 builds all indexes through SRS from the upgraded database. The cloned database carries 8.8 search settings and index host node settings that must be cleaned up or checked. Check for any search-dependent application features (custom search properties, reports or rules that rely on search), and confirm that each one works with SRS. |
+| Identity provider for Pega-to-SRS tokens | Okta | Design the SRS token setup on Okta (section 6.3). |
+| OpenSearch provider | Not chosen yet | Include a provider selection method and comparison, write Helm values that do not depend on the provider, and make the choice an open decision with a due date. |
+| Pega Support answers on the gating questions | Not received | Treat every gating question in section 4.1 as open, with an owner and a due date. The production plan must not depend on an unconfirmed answer. |
 
 ## 3. Questions the document must answer
 
@@ -112,7 +128,8 @@ Cover at least:
 - **Stream and search settings in the database.**
   - Stream service DSS and prconfig-style DSS from 8.8: the stream provider, broker URL, name pattern and replication.
   - Explain the order of precedence between Helm-supplied settings and DSS values in the database, and say which one wins. If the documentation does not settle this, make it a rehearsal test.
-  - Search DSS and settings from 8.8: embedded search or plug-in settings, and indexing node settings. Confirm that 26.1.1 uses SRS as configured in Helm.
+  - Search DSS and settings from 8.8 embedded Elasticsearch: index host node settings, and search node records. Confirm that 26.1.1 uses SRS as configured in Helm, and that no 8.8 search setting overrides it.
+  - Embedded stream settings from 8.8: Stream node records and any DSS that describe the embedded stream service. Confirm that 26.1.1 uses Confluent Cloud as configured in Helm.
 - **Leftover stream and indexing records.** Stream node records and decisioning service node records from 8.8, and any search index status or indexing queue records.
 - **Queue processor items.** Delayed items, and broken items held in database tables. Count them before the clone, and decide whether to resolve, discard or reprocess each kind on 26.1.1.
 - **Scheduled and data flow work.**
@@ -148,10 +165,10 @@ Answer the question "is there a requirement to migrate Kafka topics and search i
 
 | Content | Expected answer | Evidence to check |
 |---|---|---|
-| Pega stream data in Kafka: queue processor messages, data flow stream partitions | **Not migrated.** Pega states that existing stream data cannot be moved to a new Kafka. Before the production clone is taken, stop intake on 8.8 and let queue processors finish. If 8.8 already uses external Kafka, drain with the Stream Migration activity. Record the queue counts at zero, then stop 8.8. 26.1.1 starts with empty topics that it creates itself. | Pega docs: "Switching Kafka providers while preserving Stream data"; Helm charts: `MigrationToExternalStream.md` |
+| Pega stream data in Kafka: queue processor messages, data flow stream partitions | **Not migrated.** Pega states that existing stream data cannot be moved to a new Kafka. Before the production clone is taken, stop intake on 8.8 and let queue processors finish. 8.8 uses embedded Kafka, so there is no drain-to-external step. Hold intake, wait until queue processors show nothing ready to process, record the counts (and any broken items) as evidence, then stop 8.8. 26.1.1 starts with empty topics that it creates itself. | Pega docs: "Switching Kafka providers while preserving Stream data"; Helm charts: `MigrationToExternalStream.md` |
 | Queue items held in the database (for example delayed or broken items) | **Travel with the clone.** These are database content, not Kafka content. Check how 26.1.1 treats them after the upgrade (section 4.2), and test it in rehearsal. | Pega docs on queue processors and delayed processing |
 | Topic names and configuration | **Not migrated.** 26.1.1 creates its own topics under its own `streamNamePattern` prefix. Only the topic settings policy, such as `max.message.bytes`, is carried over, as configuration. | Pega docs: "External Kafka in your deployment" |
-| Search indexes (embedded search, legacy plug-in, or SRS on 8.8) | **Not migrated.** Indexes are built from the upgraded database after Pega connects to SRS. Pega states this needs a downtime period, so measure the time in rehearsal and fit it into the cutover plan. Elasticsearch 8.x snapshots cannot be restored into OpenSearch. | Pega docs: "Connecting Pega Platform to SRS", "Rebuilding search indexes"; OpenSearch migration documentation |
+| Search indexes (embedded Elasticsearch on 8.8) | **Not migrated.** The embedded indexes live on the 8.8 nodes, not in the database. Indexes are built from the upgraded database after Pega connects to SRS. Pega states this needs a downtime period, so measure the time in rehearsal and fit it into the cutover plan. Elasticsearch 8.x snapshots cannot be restored into OpenSearch. | Pega docs: "Connecting Pega Platform to SRS", "Rebuilding search indexes"; OpenSearch migration documentation |
 | Application Kafka integrations (Kafka data sets on the customer's own topics) | **Decided per data set.** Choose one: keep the existing topic and cluster, point at a new cluster, or mirror (for example with Confluent Cluster Linking, which keeps offsets). Agree the start offset, so that messages are neither skipped nor processed twice at cutover. | Pega docs: Kafka data sets; Confluent Cluster Linking documentation |
 | Custom search data (custom indexes, reports that depend on search) | Rebuild and verify on 26.1.1 with a count comparison against the database. | Pega docs: index status and reindex pages |
 
@@ -171,7 +188,7 @@ The section must end with a short, firm statement the customer can approve, for 
   1. Target architecture on Azure: AKS, Pega tiers, installer job, SRS, Application Gateway, private endpoints, the Confluent Cloud network, the managed OpenSearch endpoint, Key Vault, the External Secrets Operator, the hub firewall, and the upgraded database.
   2. The clone-and-upgrade flow: 8.8 production, its database, the clone, masking (for non-production), the installer upgrade, clean-up, the 26.1.1 deployment, the index build, and release.
   3. The production cutover timeline: 8.8 intake stop, drain, final clone, upgrade, first start, index build, checks, DNS switch, and the rollback point.
-  4. Shared non-production topology: one Confluent cluster and one OpenSearch service serving four Pega environments, showing the prefix, service account, ACL, index prefix and credential boundaries.
+  4. Shared non-production topology: the recommended non-production grouping (for example DEV, SIT and UAT on one set, and PERF and PREPROD on a second production-like set), showing the prefix, service account, ACL, index prefix and credential boundaries.
   5. Production topology, with its dedicated services.
   6. Network and DNS flow for Confluent Private Link and the OpenSearch private endpoint.
   7. Secret flow: Key Vault, then the External Secrets Operator, then Kubernetes secrets, then the Pega, installer and SRS pods.
@@ -223,7 +240,7 @@ The section must end with a short, firm statement the customer can approve, for 
   - snapshots;
   - support terms.
 
-  Do not name prices.
+  Do not name prices. Name only providers whose own documentation shows an Azure region and an OpenSearch version on the SRS matrix, and cite that documentation. Give a scored selection table the customer can fill in, and write the Helm values and the runbook so that they work with any provider that passes the selection (endpoint, port, credentials and CA are the only provider-specific values).
 - **SRS compatibility.** Give the SRS image and OpenSearch versions certified for 26.1.1, with the image name `search-n-reporting-service-os`. Where the Pega documentation and the Helm chart README disagree, record the conflict and follow the stricter source.
 - **Cluster settings and sizing.**
   - Give the required cluster settings with the exact API call.
@@ -234,6 +251,18 @@ The section must end with a short, firm statement the customer can approve, for 
   - One SRS per environment (recommended for isolation) or one shared SRS. Compare credentials, blast radius, upgrades and cost.
   - An OpenSearch role per environment restricted to that environment's index pattern, if SRS works with index-scoped permissions. Verify whether SRS needs cluster-level privileges and state the result.
   - Clean-up of indexes when an environment is refreshed from a new clone or retired.
+- **Pega-to-SRS tokens with Okta.** Design and verify each of the following against current Okta documentation and the Pega SRS pages:
+  - **Where tokens come from.** Pega uses the OAuth client credentials grant, with `private_key_jwt` (recommended) or `client_secret_basic`, and the scope `pega.search:full`. Use an Okta custom authorization server, because custom scopes and custom claims need one. Confirm whether the customer's Okta licence includes custom authorization servers.
+  - **The `guid` claim.** SRS checks that the token's `guid` claim equals the environment's `customerDeploymentId`. Choose how Okta issues a different value per environment:
+    - one custom authorization server per environment, with a fixed `guid` claim; or
+    - one server with a claim expression based on the client. Only choose this if Okta documents that the expression works for client credentials tokens.
+
+    Recommend one option, and prove it by decoding a token in DEV.
+  - **Okta set-up per environment.** One Okta API service application per environment. Register the public key for `private_key_jwt`, and keep the private key in Key Vault as `SRS_OAUTH_PRIVATE_KEY`.
+  - **Pega and SRS settings.** The token endpoint and key set (JWKS) URL formats for an Okta custom authorization server, set as `pegasearch.srsAuth.url` and `srsRuntime.env.OAuthPublicKeyURL`.
+  - **Network path.** SRS pods must reach the Okta JWKS URL, and Pega pods must reach the Okta token URL, both through the egress firewall. Okta is a public SaaS endpoint, so list the firewall rule.
+  - **Token checks and rotation.** Token lifetime and how often Pega requests tokens. Whether SRS checks issuer and audience. Key rotation steps on both sides.
+  - **Failure tests:** Okta unreachable, the key rotated in Okta but not in Key Vault, and a wrong `guid` value.
 - **Index build planning.**
   - Measure the full build time in each rehearsal and record it against data volume.
   - Give the method to estimate production time from the rehearsal figures.
@@ -255,7 +284,7 @@ The section must end with a short, firm statement the customer can approve, for 
     - the `hazelcast` keys as Pega requires for '26;
   - for the `backingservices` chart: `srsRuntime`, `srsStorage` and `networkPolicy`.
 
-  Columns: key, meaning, DEV, SIT, UAT, PERF, PROD, and source.
+  Columns: key, meaning, DEV, SIT, UAT, PERF, PREPROD, PROD, and source.
 - **Complete, valid YAML** values files for one non-production environment and for production, for both the upgrade run and the steady-state deploy. Check every key against the Helm chart README of the chart version used, and state that version.
 - **The secret inventory.** Give the exact key names the charts require (`STREAM_TRUSTSTORE_PASSWORD`, `STREAM_KEYSTORE_PASSWORD`, `STREAM_JAAS_CONFIG`, `SRS_OAUTH_PRIVATE_KEY`, `DB_USERNAME` and `DB_PASSWORD`, and the SRS storage `username` and `password`), the Key Vault names, and the External Secrets Operator manifests.
 - **Build order and checks**, with a check after each step: network and DNS, then secrets, Confluent, OpenSearch, SRS, the database clone, the installer upgrade, the database clean-up, the Pega deploy with intake held, the index build, and intake release.
@@ -331,7 +360,7 @@ Write these as experience-based guidance: the symptom, the cause, how to prevent
   - From '25, Pega uses Kafka for cluster messaging that Hazelcast used to carry, so a Kafka outage affects more than queue processing. Verify this and explain the consequence.
 - **OpenSearch and SRS:**
   - Indexes are auto-created with the wrong settings, or index auto-creation is blocked.
-  - OAuth claims from the chosen identity provider do not match what SRS checks. For example, Microsoft Entra ID application tokens carry `roles`, not `scp`, and no `guid`. Verify this and give the fix.
+  - Okta tokens do not carry what SRS checks: the scope is missing, the `guid` claim is missing or has the wrong value, or the token comes from the Okta org authorization server instead of a custom authorization server. Give the symptom in the SRS and Pega logs, and the fix.
   - An SRS image version is not on the matrix for the OpenSearch version.
   - Indexes are orphaned after an environment is refreshed with a new `customerDeploymentId`.
 - **Process:** a non-production refresh from a new production clone. Masking, a new or cleaned prefix and index ID, repointed integrations, and a full reindex are required every time.
@@ -365,7 +394,7 @@ Write these as experience-based guidance: the symptom, the cause, how to prevent
   - Confluent cluster types;
   - the OpenSearch provider;
   - SRS per environment or shared;
-  - the identity provider;
+  - the Okta design: one custom authorization server per environment, or one shared server;
   - the environment list;
   - the masking approach;
   - the treatment of each application Kafka data set;
