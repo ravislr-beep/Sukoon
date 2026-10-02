@@ -39,14 +39,16 @@ def s7_search(b):
         ["Fine-grained access control with index patterns [R40, R41]", "Mandatory", "", "", "", "Yes"],
         ["Encryption at rest for data and snapshots; HTTPS only on the REST layer; TLS between nodes [R76]", "Mandatory", "", "", "", "Yes"],
         ["Audit logging available to the customer [R77]", "Mandatory", "", "", "", "Yes"],
+        ["Nodes in three availability zones of the region, with shard allocation awareness on the zone attribute [R37]", "Mandatory", "", "", "", "Yes"],
+        ["Cluster metrics, slow logs, audit logs and error logs exportable to the customer, either to Azure Monitor or through a documented API", "Mandatory", "", "", "", "Yes"],
         ["Customer-managed encryption key", "Scored", "10", "", "", ""],
         ["Snapshots with customer-chosen retention", "Scored", "15", "", "", ""],
         ["Support terms and response times for PROD", "Scored", "20", "", "", ""],
-        ["Metrics export to Azure Monitor", "Scored", "15", "", "", ""],
+        ["Native Azure Monitor integration for metrics and logs", "Scored", "5", "", "", ""],
         ["Version upgrade process and notice", "Scored", "15", "", "", ""],
         ["Operations effort for the customer", "Scored", "20", "", "", ""],
         ["Data residency and certifications", "Scored", "15", "", "", ""],
-    ], caption="OpenSearch provider selection worksheet", widths=[6.2, 2, 1.4, 2.3, 2.3, 2.4], size=8.5, label="os_score")
+    ], caption="OpenSearch provider selection worksheet (scored weights total 100)", widths=[6.2, 2, 1.4, 2.3, 2.3, 2.4], size=8.5, label="os_score")
     b.p("Only four values depend on the provider: the endpoint host, the port, the SRS user credentials and the CA certificate. "
         "The Helm values in Appendix B keep those in angle brackets and in Key Vault, so the rest of the design does not change "
         "when OD-03 is decided.")
@@ -76,9 +78,9 @@ def s7_search(b):
         ["Data nodes", "Production, stage", "3", "4", "16", "100"],
         ["Data nodes", "Testing, development", "1", "2", "8", "100"],
         ["SRS", "Production, stage", "3 (autoscaled)", "2", "2", "N/A"],
-        ["SRS (chart 4.13.0 defaults, for comparison)", "All", "2 minimum, 3 best practice [R24]", "0.65 request, 1.3 limit", "4", "N/A"],
         ["SRS", "Testing, development", "1 (autoscaled)", "2", "2", "N/A"],
-    ], widths=[4.4, 3.4, 2.4, 1.8, 2.2, 2.4], caption="Pega default sizing for search and SRS (source [R14])", size=9)
+        ["SRS (chart 4.13.0 defaults, for comparison)", "All", "2 minimum, 3 best practice [R24]", "0.65 request, 1.3 limit", "4", "N/A"],
+    ], widths=[4.4, 3.4, 2.4, 1.8, 2.2, 2.4], caption="Pega default sizing for search and SRS (source [R14]; last row from [R24])", size=9)
     b.table(["Service", "Starting size", "Basis", "Adjust when"], [
         ["os-np1 (DEV, SIT, UAT)", "3 cluster-manager, 3 data nodes at the Pega production size", "Three environments' indexes plus one full build at a time; three nodes give zone spread", "Disk above 60 % after all three builds"],
         ["os-np2 (PERF, PREPROD)", "Same as os-prd", "Production-like behaviour for load tests and rehearsals", "Never smaller than os-prd"],

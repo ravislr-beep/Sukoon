@@ -26,8 +26,9 @@ def s9_helm(b):
         "post-actions [R23], and a cloned database has no running 8.8 system attached. The design therefore uses `in-place` on "
         "the clone, which is disposable until the cutover, and asks Pega Support to confirm it (GQ-04).")
     b.h2("Pega chart keys per environment")
-    b.p("{ref:tab_pega_keys} lists every `pega` chart key this design sets, with its value per environment. Keys not listed "
-        "keep the chart default. Values in angle brackets are recorded in Appendix A.")
+    b.p("{ref:tab_pega_keys} and {ref:tab_pega_keys_ks} list every `pega` chart key this design sets, with its value per "
+        "environment: platform and tier keys first, then the Kafka, search and installer keys. Keys not listed keep the "
+        "chart default. Values in angle brackets are recorded in Appendix A.")
     rows = [
         ["`global.provider`", "Kubernetes provider"] + ["`aks`"] * 6 + ["[R23]"],
         ["`global.actions.execute`", "Run type ({ref:tab_runs})"] + ["U / F / D"] * 6 + ["[R23]"],
@@ -65,8 +66,11 @@ def s9_helm(b):
         ["`installer.image`", "Installer image"] + ["`installer:26.1.1`"] * 6 + ["[R23]"],
         ["`installer.upgrade.upgradeType`", "Upgrade type (GQ-04)"] + ["`in-place`"] * 6 + ["[R23]"],
     ]
-    b.table(["Key", "Meaning"] + E.NAMES + ["Source"], rows, caption="Pega chart keys per environment (chart 4.13.0)",
-            widths=[3.5, 2.5, 1.55, 1.55, 1.55, 1.55, 1.55, 1.55, 1.25], size=6.5, label="pega_keys")
+    split = next(i for i, r in enumerate(rows) if r[0] == "`stream.enabled`")
+    for part, caption, label in ((rows[:split], "Pega chart keys per environment: platform and tiers (chart 4.13.0)", "pega_keys"),
+                                 (rows[split:], "Pega chart keys per environment: Kafka, search and installer (chart 4.13.0)", "pega_keys_ks")):
+        b.table(["Key", "Meaning"] + E.NAMES + ["Source"], part, caption=caption,
+                widths=[3.5, 2.5, 1.55, 1.55, 1.55, 1.55, 1.55, 1.55, 1.25], size=6.5, label=label)
     b.callout("note", "Starting replica counts are sized for function, not load. Set the PERF, PREPROD and PROD values from the "
               "PERF load test (Section 16), and keep PREPROD equal to PROD.")
     b.h3("Topology spread, heap and garbage collection logging")

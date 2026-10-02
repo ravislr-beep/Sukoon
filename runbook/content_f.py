@@ -29,7 +29,7 @@ def s16_issues(b):
         ["Old credential still in use after rotation", "Pods not restarted after the secret changed (FS-20)", "Restart is a rotation step", "Rolling restart"],
         ["Topic creation denied", "Security policy removed CREATE from the ACL", "Decide OD-11 early; pre-create topics if needed", "Restore CREATE or pre-create the topic"],
         ["Kafka outage stops more than queue processing", "From '25, Pega uses Kafka for cluster messaging that Hazelcast carried [R7]", "Treat Kafka as tier-1; FS-01", "Restore Kafka; check nodes reconnect"],
-        ["Producer and consumer latency rises during restarts; brief stream errors", "Connection or request limits enforced on Enterprise clusters [R31]", "Measure connections per pod; stagger restarts in shared groups; FS-31", "Wait for throttling to end; restart in smaller steps"],
+        ["Producer and consumer latency rises during restarts; brief stream errors", "Connection or request limits reached on Enterprise clusters [R31]", "Measure connections per pod; stagger restarts in shared groups; FS-31", "Wait for throttling to end; restart in smaller steps"],
         ["First start or refresh takes far longer than planned", "Partition creation paced at 500 per five minutes per cluster [R31]", "Include topic creation time in rehearsals; one refresh per group at a time; FS-32", "Let creation finish; do not restart pods mid-way"],
         ["Partition count far above the budget after first start", "Cloned 8.8 partition DSS (CD-15) [R49]", "Record the DSS at time point A", "Reset the DSS; resize with `pxAlterStreamPartitions` if Pega Support agrees"],
         ["Adding batch pods does not increase throughput", "Consumers already equal partitions [R50]", "Effective consumer formula (Section 6.7)", "Raise partitions for the bottleneck queue processor"],
@@ -258,4 +258,5 @@ def s20_risks(b):
         ["RC-11", "SRS pod resources", "Pega sizing: 2 CPU, 2 GB [R14]; chart defaults: 0.65 to 1.3 CPU, 4Gi [R24]", "Request 1 CPU, limit 2 CPU, 4Gi; adjust from PERF"],
         ["RC-12", "Topology spread for Pega tiers", "Read by the chart 4.13.0 template [R61]; not in the README [R23]", "Use it; check in `helm template` output after each chart upgrade"],
         ["RC-13", "OpenSearch storage and shard sizing", "Pega gives node sizes only [R14]; general OpenSearch guidance gives formulas [R54, R55]", "Use the formulas with measured index sizes (Section 7.4)"],
+        ["RC-14", "Enforcement of Confluent connection and request limits", "Same page [R31]: stricter limits on Enterprise from March 2026 (requests) and June 2026 (connections); also says limits are not strictly enforced and are not a hard cutoff", "Size and stagger restarts as if the limits are hard; alert on throttling"],
     ], caption="Source reconciliation register", widths=[1.3, 3.2, 7.4, 4.7], size=8)

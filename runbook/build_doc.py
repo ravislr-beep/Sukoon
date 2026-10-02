@@ -20,9 +20,9 @@ import sizing_calc
 HERE = Path(__file__).resolve().parent
 OUT = HERE / "out"
 NAME = "Pega_26_AKS_Kafka_Search_Runbook"
-META = {"version": "2.2", "status": "Issued for customer review and approval", "date": "2 October 2026"}
+META = {"version": "2.3", "status": "Issued for customer review and approval", "date": "2 October 2026"}
 TITLE = "Pega Platform 26.1.1 on Azure AKS: Externalized Kafka and Search Runbook"
-SHORT = "Pega 26.1.1 on Azure AKS | Kafka and Search Runbook | v2.2"
+SHORT = "Pega 26.1.1 on Azure AKS | Kafka and Search Runbook | v2.3"
 TOC_LEVELS = 2
 
 SECTIONS = [

@@ -67,7 +67,7 @@ def document_control(b, meta):
         ["Status", meta["status"]],
         ["Issue date", meta["date"]],
         ["Evidence cut-off", "Vendor pages were read between 28 September and 2 October 2026. Section 3 lists the facts used. Appendix F lists every source with its link."],
-        ["Supersedes", "Version 2.1 of this runbook, issued earlier on 2 October 2026. Version 2.1 corrected version 2.0, issued on 1 October 2026. Version 2.0 itself replaced version 1.0, which assumed a three-release path through an intermediate Pega release before the customer confirmed the clone-and-upgrade path (Section 1.2)."],
+        ["Supersedes", "Version 2.2 of this runbook, issued earlier on 2 October 2026. Version 2.2 added the data review to version 2.1, which corrected version 2.0, issued on 1 October 2026. Version 2.0 itself replaced version 1.0, which assumed a three-release path through an intermediate Pega release before the customer confirmed the clone-and-upgrade path (Section 1.2)."],
         ["Owner", "Customer platform engineering lead"],
         ["Review cycle", "Before each rehearsal, before the production cutover, and after any change to a vendor page listed in Section 3"],
     ], widths=[3.5, 13], first_col_bold=True, size=9.5)
@@ -79,6 +79,7 @@ def document_control(b, meta):
         ["2.0", "1 October 2026", "Rewritten for the clone-and-upgrade path, six environments, shared non-production services, managed OpenSearch and Okta.", "Implementation team"],
         ["2.1", meta["date"], "Expert review: Helm values corrected after rendering with `helm template` (SRS authentication, SRS port 8443, SRS network policy, SRS replicas and resources); availability zone design; Confluent connection, request and partition-creation limits; Okta key rotation and rate limits; OpenSearch sizing formulas; JVM settings; new Sections 15 (performance engineering and sizing) and 18 (observability); environment build waves; Appendix H sizing calculator. Sections 15 to 18 of version 2.0 became Sections 16, 17, 19 and 20.", "Implementation team"],
         ["2.2", meta["date"], "Data review: new Section 9 on the data Pega exchanges with Kafka, SRS, OpenSearch and Okta, its sensitivity, encryption in transit and at rest, personal data controls, residency, retention and erasure, and what happens to data when a transfer fails. New decisions OD-14 to OD-18, Pega Support questions GQ-09 to GQ-11, data tests DT-01 to DT-12, risks RK-17 to RK-21. Sections 9 to 20 of version 2.1 are now Sections 10 to 21.", "Implementation team"],
+        ["2.3", meta["date"], "Second expert review: Confluent limit wording reconciled with the vendor page (RC-14); one three-zone policy for all environments, with headroom by group; provider criteria for zones and log export made mandatory; routes to any SIEM; workload model procedure and record; measurements that replace the illustrative sizing inputs; test result record and planned responses for tests with no documented behaviour; failure catalogue split by layer; data security officer added to the approvals. No section numbers changed.", "Implementation team"],
     ], widths=[2, 2.8, 8.8, 3])
     p = b.doc.add_paragraph(style="Front Heading")
     p.paragraph_format.space_before = Pt(14)
@@ -89,6 +90,7 @@ def document_control(b, meta):
         ["Customer business owner", "", "", ""],
         ["Customer enterprise architect", "", "", ""],
         ["Customer security architect", "", "", ""],
+        ["Customer data security officer", "", "", ""],
         ["Customer platform engineering lead", "", "", ""],
         ["Customer database administration lead", "", "", ""],
         ["Pega Lead System Architect", "", "", ""],
@@ -290,7 +292,7 @@ def s3_evidence(b):
         ["Confluent quotas", "Client quotas are supported on Enterprise, Freight and Dedicated clusters, applied per service account or identity pool, not per API key.", "[R36]"],
         ["Okta", "Custom scopes and custom claims need a custom authorization server. The org authorization server cannot be customized.", "[R42, R43, R44]"],
         ["Okta keys and limits", "Authorization server signing keys rotate about four times a year; clients look keys up by `kid`. Rate limits apply per org; excess requests receive HTTP 429.", "[R52, R53]"],
-        ["Confluent limits", "Per Enterprise eCKU: 18,000 connections, 500 connection attempts per second, 7,500 requests per second; partition creation and deletion 500 per five minutes per cluster; limits enforced from 2026. 99.99 % SLA from 2 eCKU.", "[R31]"],
+        ["Confluent limits", "Per Enterprise eCKU: 18,000 connections, 500 connection attempts per second, 7,500 requests per second; partition creation and deletion 500 per five minutes per cluster; stricter limits from March and June 2026, treated as hard limits (RC-14). 99.99 % SLA from 2 eCKU.", "[R31]"],
         ["Pega partitions", "New stream topics get 6 partitions by default (DSS `pyTopicPartitionsCount`); queue processor threads beyond the partition count do no work.", "[R49, R50]"],
         ["Queue processor payload", "A queued message carries the producer's operator, access group and application with the payload. By default a page with a `pzInsKey` is queued as the key only; \"Queue current snapshot of page\" stores the entire page. Failed items move to the broken queue after MaxAttempts.", "[R64, R65]"],
         ["Search content in SRS mode", "Only Pega's predefined properties and the classes and properties listed in Relevant Records and Custom Search Properties are indexed, unless DSS `indexer/srs/indexAllFieldsForFTS` is set.", "[R67, R68]"],
@@ -370,14 +372,17 @@ def s4_arch(b):
               "first start (Section 6.7) rather than estimating them.")
     b.h2("Availability zone resilience")
     b.p("PERF, PREPROD and PROD are built so that the loss of one Azure availability zone does not stop Pega, Kafka or search. "
-        "{ref:fig_zones} shows the layout. DEV, SIT and UAT may run in fewer zones to save cost, but their shared Kafka "
-        "cluster and OpenSearch service follow the same rules because they carry three environments.")
+        "{ref:fig_zones} shows the layout. DEV, SIT and UAT use the same three-zone layout, for three reasons: the zones of "
+        "a node pool cannot be changed after creation [R59], the zone tests (FS-21) are first run in DEV, and their shared "
+        "Kafka cluster and OpenSearch service carry three environments. The cost saving in DEV, SIT and UAT comes from "
+        "sizing: their node pools are not given the 1.5 times zone headroom, so a zone loss there slows them but does not "
+        "stop them.")
     b.figure(GEN + "fig_zone_resilience.png", "Spreading each layer across three availability zones", OWN, width_cm=13, label="zones")
     b.table(["Layer", "Zone design", "Setting", "Source"], [
         ["AKS node pools", "Each user node pool spans zones 1, 2 and 3. The zones of a node pool cannot be changed after it is created, so this is decided before the first build", "`--zones 1 2 3` and `--enable-encryption-at-host` at node pool creation (Section 9.5)", "[R59, R78]"],
         ["Pega web and batch pods", "Spread evenly across zones; the scheduler still places pods if a zone is down", "`tier[*].topologySpreadConstraints` on `topology.kubernetes.io/zone`, `whenUnsatisfiable: ScheduleAnyway` (Appendix B)", "[R59, R61]"],
         ["SRS pods", "Preferred anti-affinity across zones", "`srsRuntime.affinity` (Section 7.7)", "[R24]"],
-        ["Node pool capacity", "Two zones must hold the full peak load, so each pool is sized at 1.5 times the peak node count", "Sizing calculator (Appendix H)", "This design"],
+        ["Node pool capacity", "PERF, PREPROD and PROD: two zones must hold the full peak load, so each pool is sized at 1.5 times the peak node count. DEV, SIT and UAT: 1.0 times, rounded up to a multiple of 3", "Sizing calculator (Appendix H)", "This design"],
         ["Pod disruption budgets", "Keep at least one pod per tier during drains and upgrades", "`tier[*].pdb.minAvailable: 1`", "[R23]"],
         ["Confluent Cloud", "Enterprise: the 99.99 % SLA needs at least 2 eCKU. Dedicated: the cluster must be created multi-zone, which needs at least 2 CKU and cannot be changed later", "Cluster creation (CC-1); one private endpoint per zone", "[R31, R32]"],
         ["OpenSearch", "Three cluster-manager nodes and data nodes in three zones, one replica, zone awareness on", "Provider setting (Section 7.4)", "[R37]"],

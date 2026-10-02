@@ -253,9 +253,11 @@ def s14_testing(b):
         ["PT-04", "Consumer lag under peak per queue processor", "Lag within the alert threshold", ""],
     ], caption="Performance tests", widths=[1.3, 6.6, 6, 2.7], size=9)
     b.h2("Failure scenario catalogue")
-    b.p("{ref:tab_fail} lists the failures to test. Run Kafka, search and platform scenarios in PERF or PREPROD, and "
+    b.p("The failures to test are grouped by layer: Kafka in {ref:tab_fail}, search and identity in {ref:tab_fail_search}, "
+        "and platform and clone in {ref:tab_fail_platform}. Run Kafka, search and platform scenarios in PERF or PREPROD, and "
         "clone-specific scenarios in DEV during the first build and again in PREPROD. Where Pega does not document the exact "
-        "behaviour, record what happens in the first run; that record becomes the expected result for later runs.")
+        "behaviour, record what happens in the first run in the result record (Section 15.9); that record becomes the "
+        "expected result for later runs.")
     rows = [
         ["FS-01", "Kafka bootstrap unreachable", "Block 9092 to the Confluent endpoints with a network policy", "Queue processing and cluster messaging stop; Stream landing page not NORMAL", "Stream landing page; Pega log Kafka connection errors; alert", "Remove the block; pods reconnect or restart", "Processing resumes; no item lost"],
         ["FS-02", "Zonal private DNS record missing", "Remove one zonal record in DEV", "Some broker connections fail after bootstrap", "K-3 shows a broker resolving publicly or not at all", "Restore the record", "All broker names resolve privately"],
@@ -293,8 +295,19 @@ def s14_testing(b):
         ["FS-34", "Client key rotation with two keys", "Register a second public key on the DEV client; switch Key Vault to the new private key; restart", "Okta accepts the assertion signed with either key", "Okta System Log `invalid_client` errors", "Keep the old key until the new one works", "Token issued with the new key; old key removed"],
         ["FS-35", "Okta rate limit reached", "In a sandbox org or with Okta's agreement, drive token requests above the token endpoint limit", "HTTP 429 to Pega; search fails once the token expires [R52]", "Okta System Log rate-limit warning and violation events", "Find the source; lengthen token lifetime; raise the limit with Okta", "Warning alert fires before any violation"],
     ]
-    b.table(["ID", "Scenario", "How to cause it safely", "Expected behaviour", "Detection", "Recovery", "Pass criteria"], rows,
-            caption="Failure scenario catalogue", widths=[1.1, 2.4, 2.9, 2.6, 2.6, 2.6, 2.4], size=7, label="fail")
+    groups = [
+        ("Kafka", ["FS-01", "FS-02", "FS-03", "FS-04", "FS-05", "FS-06", "FS-07", "FS-08", "FS-22", "FS-30", "FS-31", "FS-32"], "fail"),
+        ("Search and identity", ["FS-09", "FS-10", "FS-11", "FS-12", "FS-13", "FS-14", "FS-15", "FS-16", "FS-17", "FS-18",
+                                 "FS-19", "FS-23", "FS-29", "FS-33", "FS-34", "FS-35"], "fail_search"),
+        ("Platform and clone", ["FS-20", "FS-21", "FS-24", "FS-25", "FS-26", "FS-27", "FS-28"], "fail_platform"),
+    ]
+    by_id = {r[0]: r for r in rows}
+    assert sorted(i for _, ids, _ in groups for i in ids) == sorted(by_id)
+    for name, ids, label in groups:
+        b.h3(f"{name} failure scenarios")
+        b.table(["ID", "Scenario", "How to cause it safely", "Expected behaviour", "Detection", "Recovery", "Pass criteria"],
+                [by_id[i] for i in ids], caption=f"{name} failure scenarios",
+                widths=[1.1, 2.4, 2.9, 2.6, 2.6, 2.6, 2.4], size=7, label=label)
     b.h2("Exact checks")
     b.table(["Check", "Command or screen", "Expected result"], [
         ["Stream service", "Dev Studio: Configure > Decisioning > Infrastructure > Services > Stream", "Provider ExternalKafka; status NORMAL; bootstrap and prefix from Helm [R13]"],
@@ -318,3 +331,30 @@ def s14_testing(b):
         ["AC-6", "Monitoring and alerts in Section 19.5 are live and tested."],
         ["AC-7", "Data tests DT-01 to DT-12 pass, and the data security officer has accepted the data inventory, the classification and the at-rest decisions in Section 9."],
     ], caption="Acceptance criteria", widths=[1.4, 15.2], size=9)
+    b.h2("Test result record")
+    b.p("Record every test run in the same form, so that results can be compared across environments and rehearsals and "
+        "filed as evidence (Appendix D). One record per test per run.")
+    b.table(["Field", "What to enter"], [
+        ["Test ID and run", "For example FS-33, DEV, run 1"],
+        ["Build", "Pega image tag, chart versions, values file commit"],
+        ["Date, time and tester", "Start and end time in UTC"],
+        ["Preconditions", "Entry criteria met (Test stages table), with the evidence reference"],
+        ["Steps run", "Commands or screens used, with any deviation from the catalogue"],
+        ["Observed result", "What happened, with log extracts, metric screenshots and alert times"],
+        ["Outcome", "Pass, fail, or recorded (for tests whose expected behaviour no document settles)"],
+        ["Defect or decision", "Defect ID, or the decision taken and by whom"],
+        ["Expected result for later runs", "Only for recorded outcomes: the observed behaviour, approved by the owner below"],
+    ], caption="Test result record", widths=[4.4, 12.2], size=9)
+    b.p("Some tests check behaviour that neither Pega nor the vendor documents. Their first result is recorded, not judged. "
+        "The table below states, for each, the action if the result is unfavourable, so that a result never blocks the "
+        "programme without a planned response.")
+    b.table(["Test", "Unknown", "Approver", "If the result is unfavourable"], [
+        ["FS-12", "Whether SRS checks the token issuer", "Security architect", "Rely on the `guid` claim and per-environment clients (IT-07); raise a Pega Support case"],
+        ["FS-24", "Whether cloned stream or search DSS override Helm values", "Pega LSA", "Remove the DSS in clean-up (CD items) before run D; follow GQ-05"],
+        ["FS-33", "Whether SRS refetches the Okta key set after rotation", "Identity team", "Set the authorization server to manual rotation and rotate in a change window with an SRS restart"],
+        ["FS-34", "Whether Okta accepts the client assertion while two keys are registered", "Identity team", "Rotate in a change window: replace the key and restart Pega in the same change"],
+        ["IT-06", "Whether SRS works with an index-scoped role", "Search team", "Grant the smallest role that works, record it, and keep one SRS user per environment"],
+        ["DT-04", "Effect of PropertyEncrypt on search", "Data security officer", "Exclude the property from search (OD-17) or accept that it is not searchable"],
+        ["DT-06", "Whether purge removes the index document", "Data security officer", "Add a rebuild of the affected class index to the erasure procedure; follow GQ-11"],
+        ["DT-07", "Duplicate side effects on repeat delivery", "Pega LSA", "Make the queued activity idempotent (check before acting) and retest"],
+    ], caption="Tests with a recorded first result and the planned response", widths=[1.4, 5, 3, 7.2], size=8.5, label="recorded_tests")

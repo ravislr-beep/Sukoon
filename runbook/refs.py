@@ -87,4 +87,7 @@ REFS = {
     "R77": ("OpenSearch Documentation", "Audit logs", OS + "security/audit-logs/index/"),
     "R78": ("Microsoft Learn", "Enable host-based encryption on Azure Kubernetes Service", "https://learn.microsoft.com/en-us/azure/aks/enable-host-encryption"),
     "R79": ("Microsoft Learn", "Bring your own keys (BYOK) with Azure managed disks in AKS", "https://learn.microsoft.com/en-us/azure/aks/azure-disk-customer-managed-keys"),
+    "R80": ("Microsoft Learn", "Log Analytics workspace data export in Azure Monitor", "https://learn.microsoft.com/en-us/azure/azure-monitor/logs/logs-data-export"),
+    "R81": ("Okta Help Center", "Log streaming", "https://help.okta.com/en-us/content/topics/reports/log-streaming/about-log-streams.htm"),
+    "R82": ("Okta Developer", "System Log API", "https://developer.okta.com/docs/api/openapi/okta-management/management/tag/SystemLog/"),
 }

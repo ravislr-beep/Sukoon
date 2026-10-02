@@ -28,7 +28,8 @@ OS_EXAMPLE = {
     "os-prd": dict(primary_gib=40, replicas=1, growth=0.2, years=3, rebuild_gib=0, indexes=60, primaries=1, disk_gib=100, heap_gib=8),
 }
 AKS_EXAMPLE = {
-    "PROD Pega pool": dict(pods=12, cpu_req=3, mem_req=12, alloc_cpu=15, alloc_mem=58),
+    "PROD Pega pool": dict(pods=12, cpu_req=3, mem_req=12, alloc_cpu=15, alloc_mem=58, headroom=1.5),
+    "NP1 Pega pool": dict(pods=13, cpu_req=3, mem_req=12, alloc_cpu=15, alloc_mem=58, headroom=1.0),
 }
 OKTA_EXAMPLE = [
     ("DEV", 4, 12), ("SIT", 4, 12), ("UAT", 5, 12), ("PERF", 12, 12), ("PREPROD", 12, 12), ("PROD", 12, 12),
@@ -58,13 +59,13 @@ def opensearch(primary_gib, replicas, growth, years, rebuild_gib, indexes, prima
                 shards=shards, nodes_storage=n_storage, nodes_shards=n_shards, nodes=nodes)
 
 
-def aks(pods, cpu_req, mem_req, alloc_cpu, alloc_mem):
+def aks(pods, cpu_req, mem_req, alloc_cpu, alloc_mem, headroom=1.5):
     per_node = min(math.floor(alloc_cpu / cpu_req), math.floor(alloc_mem / mem_req))
     base = math.ceil(pods / per_node)
-    nodes = math.ceil(base * 1.5) + 1
+    nodes = math.ceil(base * headroom) + 1
     nodes = math.ceil(nodes / ZONES) * ZONES
     return dict(pods=pods, cpu_req=cpu_req, mem_req=mem_req, alloc_cpu=alloc_cpu, alloc_mem=alloc_mem,
-                per_node=per_node, base=base, nodes=nodes)
+                headroom=headroom, per_node=per_node, base=base, nodes=nodes)
 
 
 def example():
@@ -114,7 +115,7 @@ def _readme(wb):
         ("Confluent Cloud per-unit limits and the 2-unit SLA minimum: Confluent, 'Kafka cluster types in Confluent Cloud' (runbook reference R31).", False),
         ("Pega partitions per topic default of 6: Pega, 'Changing the default number of partitions per topic' (R49).", False),
         ("OpenSearch storage factor 1.45 and 25 shards per GiB of heap: Amazon OpenSearch Service sizing and shard guidance (R54, R55).", False),
-        ("AKS zone headroom of 1.5 and one surge node: this design (runbook Section 4.6).", False),
+        ("AKS zone headroom of 1.5 (PERF, PREPROD, PROD) or 1.0 (DEV, SIT, UAT) and one surge node: this design (runbook Section 4.6).", False),
         ("Okta rate limits: enter your org's token endpoint limit from the Okta Admin Console (R52).", False),
         ("", False),
         ("Recheck the constants against the vendor pages before each use; vendors change them.", True),
@@ -216,23 +217,26 @@ def _opensearch(wb):
 def _aks(wb):
     ws = wb.create_sheet("AKS")
     pools = list(AKS_EXAMPLE)
-    _header(ws, 1, ["AKS nodes for the Pega node pool"] + pools + ["Notes"], [44, 20, 60])
+    _header(ws, 1, ["AKS nodes for the Pega node pool"] + pools + ["Notes"], [44, 20, 20, 60])
+    cols = [chr(66 + i) for i in range(len(pools))]
     keys = [("Pega pods at HPA maximum (web + batch)", "pods", "Sum of tier HPA maximums"),
             ("CPU request per pod", "cpu_req", "Chart default 3"),
             ("Memory request per pod, GiB", "mem_req", "Chart default 12Gi"),
             ("Allocatable CPU per node", "alloc_cpu", "kubectl describe node; after system reservations"),
-            ("Allocatable memory per node, GiB", "alloc_mem", "kubectl describe node")]
+            ("Allocatable memory per node, GiB", "alloc_mem", "kubectl describe node"),
+            ("Zone headroom factor", "headroom", "1.5 for PERF, PREPROD and PROD so two zones carry the peak; 1.0 for DEV, SIT and UAT (Section 4.6)")]
     _rows(ws, 2, [(l, [AKS_EXAMPLE[p][k] for p in pools], n) for l, k, n in keys], ["in"] * len(keys))
     calc = [
         ("Pega pods per node", "=MIN(ROUNDDOWN({c}5/{c}3,0),ROUNDDOWN({c}6/{c}4,0))", ""),
         ("Nodes for the load", "=ROUNDUP({c}2/{c}8,0)", ""),
-        ("Nodes with zone headroom and surge", "=CEILING(ROUNDUP({c}9*1.5,0)+1," + str(ZONES) + ")", "x 1.5 so two zones carry the peak; +1 surge node; multiple of 3"),
+        ("Nodes with zone headroom and surge", "=CEILING(ROUNDUP({c}9*{c}7,0)+1," + str(ZONES) + ")", "x headroom factor; +1 surge node; multiple of 3"),
     ]
     for i, (label, f, note) in enumerate(calc, 8):
         ws.cell(row=i, column=1, value=label).font = BOLD if i == 10 else Font()
-        ws[f"B{i}"] = f.format(c="B")
-        ws[f"B{i}"].fill = OUTPUT
-        ws.cell(row=i, column=3, value=note).alignment = Alignment(wrap_text=True)
+        for c in cols:
+            ws[f"{c}{i}"] = f.format(c=c)
+            ws[f"{c}{i}"].fill = OUTPUT
+        ws.cell(row=i, column=2 + len(cols), value=note).alignment = Alignment(wrap_text=True)
     ws.cell(row=12, column=1, value="SRS pods and system pods are not included. Place them on another pool or add their requests.").font = Font(italic=True)
 
 

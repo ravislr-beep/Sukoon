@@ -12,7 +12,7 @@ def s15_perf(b):
         "Every queue item, cluster message and index update now crosses the network to Confluent Cloud or to SRS and OpenSearch, through private endpoints. On 8.8 these stayed inside the Pega nodes.",
         "Queue processing in '26 is partitioned and multi-threaded [R3], so throughput depends on partitions, threads and batch pods together (Section 6.7).",
         "From '25, cluster messaging that Hazelcast carried uses Kafka [R7]. Kafka load rises with the number of Pega pods, not only with business volume.",
-        "Confluent enforces connection and request limits on Enterprise clusters [R31]. A design that works at average load can be throttled at peak or during a rolling restart.",
+        "Confluent applies connection and request limits on Enterprise clusters, which this runbook treats as hard limits [R31]. A design that works at average load can be throttled at peak or during a rolling restart.",
         "Non-production environments share clusters and search services. Contention between them only shows up under load.",
         "The full index build sets part of the production outage [R15], and its time depends on resources that only a full-size test can show.",
         "Pega asks clients to start from its default search sizing and adjust it after measuring [R14].",
@@ -32,9 +32,27 @@ def s15_perf(b):
         ["Search queries and search-based reports per hour", "Pega logs; report statistics", "SRS and OpenSearch query rate"],
         ["Calendar peaks: month end, campaigns, seasonal", "Business owner", "Peak-hour definition"],
         ["Data volume and yearly growth", "Database sizes; DEV index sizes (S-4)", "Storage sizing"],
-    ], caption="Workload model inputs", widths=[5.6, 6, 5], size=8.5)
+    ], caption="Workload model inputs", widths=[5.6, 6, 5], size=8.5, label="workload_inputs")
     b.p("Define one design peak hour that combines the busiest user load with the busiest background load seen together on "
         "8.8, plus the agreed growth. All targets in this section refer to that hour.")
+    b.steps([
+        "Choose the observation period with the business owner: at least the last three months of 8.8 production, including one month end and the busiest known calendar peak.",
+        "Extract each input in {ref:tab_workload_inputs} for every hour of that period, in UTC. Keep the queries or exports as evidence.",
+        "Find the hour with the highest combined user and background load. If the user peak and the queue processor peak fall in different hours, keep both as separate test profiles.",
+        "Apply the agreed growth to the chosen hour or hours. The result is the design peak hour.",
+        "Agree the targets for that hour with the business owner: response time at the 95th percentile per journey, maximum consumer lag per business-critical queue processor, and search response time.",
+        "Record the model in the form below, get the business owner's approval and file it as evidence before the first PERF test.",
+    ])
+    b.table(["Field", "What to enter"], [
+        ["Observation period", "Start and end dates; calendar peaks included"],
+        ["Design peak hour", "Date and hour on 8.8; growth factor applied"],
+        ["Per journey", "Name; requests per hour; concurrent users; 95th percentile target"],
+        ["Per queue processor", "Name; items per hour; maximum lag target; business-critical yes or no"],
+        ["Job schedulers", "Name; start time; duration on 8.8"],
+        ["Search", "Queries per hour; search-based reports per hour; response time target"],
+        ["Data volume", "Cases per type; yearly growth; searchable data from S-4"],
+        ["Approval", "Business owner name and date; evidence references"],
+    ], caption="Workload model record", widths=[4.4, 12.2], size=9)
 
     b.h2("Test types and measurement points")
     b.table(["Test", "Purpose", "Profile", "Pass criteria"], [
@@ -112,7 +130,7 @@ def s15_perf(b):
         ["OpenSearch storage and nodes", "Formulas in {ref:tab_os_formulas}", "[R54, R55]"],
         ["SRS", "3 pods in PERF, PREPROD and PROD; add pods if SRS CPU stays above 70 % at peak", "[R14, R24]"],
         ["Okta", "Token requests per minute summed over all environments, compared with the org's token endpoint limit", "[R52]"],
-        ["AKS nodes", "Pega pods per node = the smaller of allocatable CPU / CPU request and allocatable memory / memory request. Nodes = (pods at HPA maximum / pods per node) x 1.5 for zone loss, plus 1 for upgrade surge, rounded up to a multiple of 3", "[R59]"],
+        ["AKS nodes", "Pega pods per node = the smaller of allocatable CPU / CPU request and allocatable memory / memory request. Nodes = (pods at HPA maximum / pods per node) x 1.5 for zone loss in PERF, PREPROD and PROD (x 1.0 in DEV, SIT and UAT), plus 1 for upgrade surge, rounded up to a multiple of 3", "[R59]"],
     ], caption="Sizing rules per layer", widths=[3.2, 11, 2.4], size=8.5, label="sizing_rules")
 
     b.h2("Worked example")
@@ -126,12 +144,27 @@ def s15_perf(b):
         ["OpenSearch os-prd", f"{o['primary_gib']} GiB primary data, {o['replicas']} replica, {int(o['growth'] * 100)} % growth a year for {o['years']} years, {o['indexes']} indexes with {o['primaries']} primary shard each, {o['disk_gib']} GiB usable disk and {o['heap_gib']} GiB heap per node",
          f"Storage {o['storage_gib']} GiB; nodes by storage {o['nodes_storage']}, by shards {o['nodes_shards']}, zone minimum 3. Result: {o['nodes']} data nodes"],
         ["AKS Pega node pool", f"{a['pods']} Pega pods at HPA maximum, {a['cpu_req']} CPU and {a['mem_req']} GiB each; nodes with {a['alloc_cpu']} CPU and {a['alloc_mem']} GiB allocatable",
-         f"{a['per_node']} pods per node; {a['base']} nodes for the load; x 1.5 and + 1 gives {a['nodes']} nodes"],
+         f"{a['per_node']} pods per node; {a['base']} nodes for the load; x {a['headroom']} and + 1 gives {a['nodes']} nodes"],
     ], caption="Worked sizing example (illustrative inputs)", widths=[3, 7.6, 6], size=8.5)
     b.p("In this example the Confluent cluster is sized by the SLA minimum, not by load, and the OpenSearch service by the "
         "three-zone minimum. That is common for Pega workloads of this kind. The shared clusters change the picture: in NP1, "
         "three environments' partitions add up, and partitions or connections can set the unit count instead. Run the "
         "calculator for each group, not only for PROD.")
+    b.h3("Replacing the illustrative inputs")
+    b.p("Each calculator input has one measurement that replaces it. Record the value, the test and the date next to the "
+        "input in the workbook. PROD sizes are signed off at M3 only when every input for PROD is measured.")
+    b.table(["Calculator input", "Measured in", "How", "Owner"], [
+        ["Peak ingress and egress", "PERF load test at the design peak", "Metrics API received and sent bytes per cluster (M3)", "Kafka team"],
+        ["Partitions", "DEV and PERF first start", "K-5 topic list, summed over the group", "Kafka team"],
+        ["Connections and requests", "PERF load test and rolling restart", "Metrics API active connections and request rate (M3)", "Kafka team"],
+        ["Primary data and indexes", "Full index build on the full-size clone", "S-4 `_cat/indices`", "Search team"],
+        ["Rebuild peak", "Full index build in DEV and PERF", "Provider disk metric during the build", "Search team"],
+        ["Growth and years", "Workload model record", "Business owner's approved growth", "Business owner"],
+        ["Pods at HPA maximum", "PERF load and spike tests", "Pods at peak x 1.25 (sizing rules)", "Performance lead"],
+        ["Node allocatable CPU and memory", "First node pool", "`kubectl describe node`", "Platform team"],
+        ["Token requests per pod per hour", "PERF soak test", "Okta System Log token events per client", "Identity team"],
+        ["Org token endpoint limit", "Okta Admin Console", "Rate limits page for the org [R52]", "Identity team"],
+    ], caption="Measurements that replace the illustrative inputs", widths=[4, 4.2, 5.6, 2.8], size=8.5)
 
 
 def app_h_calculator(b):
@@ -143,7 +176,7 @@ def app_h_calculator(b):
     b.table(["Sheet", "Inputs", "Outputs", "Sources of constants"], [
         ["Kafka", "Per group: cluster type, peak ingress and egress, measured partitions, headroom, connections, requests per second", "Units needed by each limit; capacity units; the limit that sets them; warnings above 10 and 32 eCKU", "[R31, R49]"],
         ["OpenSearch", "Per service: primary data, replicas, growth, years, rebuild peak, indexes, shards per index, disk and heap per node", "Storage; total shards; data nodes by storage, by shards and by zones; average shard size", "[R54, R55]"],
-        ["AKS", "Pega pods at HPA maximum, pod requests, node allocatable CPU and memory", "Pods per node; nodes for the load; nodes with zone headroom and surge", "[R23, R59]"],
+        ["AKS", "Per pool: Pega pods at HPA maximum, pod requests, node allocatable CPU and memory, zone headroom factor", "Pods per node; nodes for the load; nodes with zone headroom and surge", "[R23, R59]"],
         ["Okta", "Pods and measured token requests per pod per hour, per environment; org token endpoint limit", "Token requests per minute; share of the org limit", "[R52]"],
     ], caption="Sizing calculator sheets", widths=[2.2, 6, 5.6, 2.8], size=8.5)
     b.h2("Example outputs")
@@ -206,7 +239,7 @@ def s18_observability(b):
         ["Confluent audit log", "Authentication, ACL and management events", "Consumer on topic `confluent-audit-log-events` in the audit log cluster [R57]", "SIEM", "Kept 7 days by default; export for longer retention"],
         ["OpenSearch", "Cluster health, nodes, disk, latency; slow logs; audit logs", "Provider export", "Log Analytics", "Section 19.2"],
         ["SRS pods", "Application logs on stdout", "Azure Monitor agent", "Log Analytics", "Request errors and latency"],
-        ["Okta", "System Log: token issue, failures, rate-limit events", "Okta log streaming or System Log API to the SIEM", "SIEM", "Rate-limit events [R52]"],
+        ["Okta", "System Log: token issue, failures, rate-limit events", "Log streaming, which supports Amazon EventBridge and Splunk Cloud only [R81]; otherwise a collector polling the System Log API [R82]", "SIEM", "Rate-limit events [R52]"],
         ["Azure Firewall", "Allowed and denied flows", "Diagnostic settings", "Log Analytics", "IT-09, IT-10 evidence"],
         ["Synthetic checks", "DNS, TLS, Kafka metadata, SRS and token checks", "CronJob per namespace", "Log Analytics and metrics", "Section 19.6"],
     ], caption="Telemetry sources", widths=[2.6, 3.6, 4, 2.4, 4], size=8)
@@ -219,7 +252,17 @@ def s18_observability(b):
         "**Sensitive data.** Non-production logs come from masked clones only. Never log the JAAS value, tokens or private keys; the pipeline secret scan covers values files, and log queries for `password=` and `Bearer ` run weekly, together with queries for the customer's personal data patterns (DT-10). Slow logs and heap dumps follow the rules in Section 9.6.",
         "**OpenSearch slow logs.** Use the cluster-level search request slow log, available from OpenSearch 2.12, rather than per-index shard slow logs [R58]. It needs no change to index settings, which SRS owns (Section 7.4).",
         "**Confluent audit log.** The default 7-day retention is too short for incident review [R57]. Stream it to the SIEM.",
+        "**OpenSearch provider logs.** Export of metrics, slow logs, audit logs and error logs is a mandatory provider criterion ({ref:tab_os_score}). Collect them into the non-production or production Log Analytics workspace, so they are kept and queried with the SRS and Pega logs.",
     ])
+    b.p("The design does not depend on a particular SIEM. {ref:tab_siem} shows the three routes that cover every source; "
+        "the customer's security team picks the connector for each route that its SIEM supports.")
+    b.table(["Route", "Sources", "Mechanism", "Source"], [
+        ["Azure to SIEM", "Pega, SRS, AKS, Azure Firewall, OpenSearch provider logs (all in Log Analytics)", "Data export rules per table to Event Hubs or a storage account, as the data arrives; the SIEM reads from there", "[R80]"],
+        ["Confluent to SIEM", "Confluent audit log", "A consumer of `confluent-audit-log-events` with an audit log API key, run in the operations subscription, writing to the SIEM", "[R57]"],
+        ["Okta to SIEM", "Okta System Log", "Log streaming if the SIEM is Splunk Cloud or takes Amazon EventBridge; otherwise a System Log API collector", "[R81, R82]"],
+    ], caption="Routes from each source to the customer's SIEM", widths=[2.8, 5, 6.8, 2], size=8.5, label="siem")
+    b.p("Test each route before M3: generate a known event (a denied firewall flow, an ACL denial in DEV, a failed token "
+        "request) and confirm it reaches the SIEM within the agreed time.")
 
     b.h2("Pega Diagnostic Center")
     b.p("Pega Diagnostic Center (PDC) collects health and alert data from Pega and shows it per system. For a client-managed "

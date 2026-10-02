@@ -133,13 +133,14 @@ def s6_kafka(b):
         ["Private networking", "No", "No", "Yes (Private Link)", "Yes (Private Link or VNet peering)"],
         ["Client quotas [R36]", "No", "No", "Yes", "Yes"],
     ], widths=[4.6, 2.6, 2.6, 3.2, 3.6], caption="Confluent Cloud cluster limits relevant to Pega (source [R31]; Basic and Standard rows for connections and requests are not used here)", size=9, label="cc_limits")
-    b.callout("important", ["Confluent now enforces the connection and request limits on Enterprise clusters rather than "
-              "treating them as guidance: request limits from March 2026 and connection limits from June 2026 [R31]. A client "
-              "over a limit is throttled, and the Metrics API reports the throttling per principal with the limit that was hit "
-              "[R56].",
+    b.callout("important", ["Confluent's cluster types page states two things about these limits [R31]. It says stricter "
+              "limits apply to Enterprise and Freight clusters, for requests from March 2026 and for connections and connection "
+              "attempts from June 2026. It also says the limits are not yet a hard cutoff, and that a client above them may be "
+              "throttled, have new connections delayed or see unpredictable performance. Plan as if the limits are hard "
+              "(RC-14). The Metrics API reports throttling per principal with the limit that was hit [R56].",
               "Pega pods open many Kafka connections: one set per producer, per queue-processor consumer thread and for cluster "
               "messaging. A rolling restart of a large tier, or every environment in a group starting at once after a refresh, "
-              "can reach the connection-attempt limit. Measure connections per pod in DEV (Section 16.8), stagger restarts in "
+              "can reach the connection-attempt limit. Measure connections per pod in DEV (measurement point M3, Section 16.3), stagger restarts in "
               "shared groups, and alert on throttling (Section 19.5)."])
     b.callout("caution", "Partition creation and deletion are paced at 500 per five minutes per cluster on Enterprise [R31]. "
               "The first start of an environment creates every Pega topic, and a refresh deletes them all. With several hundred "
