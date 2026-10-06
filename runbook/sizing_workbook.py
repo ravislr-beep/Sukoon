@@ -7,6 +7,7 @@ Writes two files to out/:
 All results are Excel formulas, so the customer and the providers can follow and change them.
 """
 import math
+import re
 import sys
 from pathlib import Path
 
@@ -42,7 +43,7 @@ CENTER = Alignment(horizontal="center", vertical="top", wrap_text=True)
 
 S_SETUP, S_KC, S_KD, S_SS, S_SD = "1 Setup", "2 Kafka Clusters", "3 Kafka Demand", "4 Search Services", "5 Search Demand"
 S_KS, S_SZ, S_CR, S_OR, S_CK = "6 Kafka Sizing", "7 Search Sizing", "8 Confluent Request", "9 Search Request", "10 Checks"
-S_REF, S_REFS, S_LOG, S_COVER, S_GUIDE = "Ref_Data", "References", "Change Log", "Cover", "Guide"
+S_REF, S_TAB, S_REFS, S_LOG, S_COVER, S_GUIDE = "Ref_Data", "Ref_Tables", "References", "Change Log", "Cover", "Guide"
 
 KIDS = [f"K{i}" for i in range(1, 7)]
 SIDS = [f"S{i}" for i in range(1, 7)]
@@ -161,7 +162,7 @@ class Grid:
         header_row(ws, ID_ROW, ["Step", "Item", "Unit", how_label, "Ref"] + ids)
         note(ws.cell(ID_ROW, 5), "Source IDs. P = Pegasystems, C = Confluent, O = OpenSearch Project, A = AWS OpenSearch "
                                  "Service guidance, W = workbook rule. Full links are on the References sheet.")
-        widths(ws, [7, 34, 11, 58, 9] + [17] * len(ids))
+        widths(ws, [7, 34, 11, 58, 9] + [19] * len(ids))
         ws.freeze_panes = ws.cell(ID_ROW + 1, COL0)
 
     def section(self, text):
@@ -199,8 +200,25 @@ class Grid:
             cell.value = v
             style(cell, kind, fmt, align=Alignment(horizontal="center", vertical="top", wrap_text=True))
         fit_height(ws, r, [(label, 34), (how, 58)])
+        if isinstance(formula, str) and formula.startswith("=") and kind in ("white", "key") and fmt is None:
+            longest = max((len(t) for t in re.findall(r'"([^"]*)"', formula)), default=0)
+            if longest > 16:
+                lines = math.ceil((longest + 16) / 16.0)
+                ws.row_dimensions[r].height = max(ws.row_dimensions[r].height or 0, 13.5 * lines + 2)
         self.r += 1
         return r
+
+    def grey_unused(self, envs_key="envs", last_row=None):
+        """Grey out the columns of clusters or services that have no environments; this rule runs first."""
+        ws, c0, c1 = self.ws, self.cols[0], self.cols[-1]
+        last = last_row or self.r
+        rule = FormulaRule(formula=[f"{c0}${self.rows[envs_key]}=0"], font=Font(color="A6A6A6"),
+                           fill=PatternFill("solid", fgColor="F7F7F7", bgColor="F7F7F7"), stopIfTrue=True)
+        for rules in ws.conditional_formatting._cf_rules.values():
+            for x in rules:
+                x.priority += 1
+        rule.priority = 1
+        ws.conditional_formatting.add(f"{c0}{ID_ROW + 1}:{c1}{last}", rule)
 
     def ref(self, key):
         return self.rows[key]
@@ -435,7 +453,7 @@ SS_ITEMS = [
 
 # Kafka demand columns: key, header, unit, kind, default, formula, fmt, comment, width
 KD_COLS = [
-    ("env", "Environment", "", "calc", None, "=IF({S}!B{sr}=\"\",\"\",{S}!B{sr})", None, None, 11),
+    ("env", "Environment", "", "calc", None, "=IF({S}!B{sr}=\"\",\"\",{S}!B{sr})", None, None, 13),
     ("cluster", "Kafka cluster", "", "calc", None, "=IF(AND({S}!E{sr}=\"Yes\",{S}!F{sr}<>\"\"),{S}!F{sr},\"\")", None,
      "Taken from the Setup sheet. Blank when the environment is out of scope.", 8),
     ("land", "Pega landscape", "", "calc", None, "=IF({S}!D{sr}=\"\",\"\",{S}!D{sr})", None, None, 12),
@@ -502,7 +520,7 @@ KD_COLS = [
 ]
 
 SD_COLS = [
-    ("env", "Environment", "", "calc", None, "=IF({S}!B{sr}=\"\",\"\",{S}!B{sr})", None, None, 11),
+    ("env", "Environment", "", "calc", None, "=IF({S}!B{sr}=\"\",\"\",{S}!B{sr})", None, None, 13),
     ("svc", "Search service", "", "calc", None, "=IF(AND({S}!E{sr}=\"Yes\",{S}!G{sr}<>\"\"),{S}!G{sr},\"\")", None,
      "Taken from the Setup sheet. Blank when the environment is out of scope.", 8),
     ("land", "Pega landscape", "", "calc", None, "=IF({S}!D{sr}=\"\",\"\",{S}!D{sr})", None, None, 12),
@@ -616,39 +634,42 @@ def build_ref(wb):
         fit_height(ws, r, [(param, 52), (quote, 96)])
         r += 1
 
-    r += 1
+    ws.freeze_panes = "A5"
+    protect(ws)
+    return ws
+
+
+def build_ref_tables(wb):
+    ws = wb.create_sheet(S_TAB)
+    title(ws, "Ref_Tables: published tables used by the formulas",
+          f"Lookup tables with named ranges. Checked {R.CHECKED}. Sources in square brackets are on the References "
+          "sheet.")
+    widths(ws, [26, 13, 13, 15, 14, 14, 14, 12, 16, 16, 62])
+    r = 4
     ws.cell(r, 1, "Confluent Cloud limits per eCKU or CKU, and cluster-level limits [C1][C3]").font = F_BOLD
     r += 1
-    header_row(ws, r, ["Cluster type"] + R.CF_COLUMNS[:6], height=44)
-    for j, h in enumerate(R.CF_COLUMNS[6:]):
-        c = ws.cell(r, 8 + j, h)
-        c.fill, c.font, c.border, c.alignment = FILL["head"], F_HEAD, BOX, CENTER
+    header_row(ws, r, ["Cluster type"] + R.CF_COLUMNS + ["Notes"], height=72)
     hdr = r
-    ws.cell(r, 11, "Notes").fill = FILL["head"]
-    ws.cell(r, 11).font = F_HEAD
-    for col in range(8, 12):
-        ws.column_dimensions[get_column_letter(col)].width = 16
-    ws.column_dimensions["K"].width = 60
     r += 1
     first = r
     for t in R.CF_TYPES:
-        ws.cell(r, 1, t)
-        style(ws.cell(r, 1), "white", bold=True)
+        style(ws.cell(r, 1, t), "white", bold=True)
         for j, v in enumerate(R.CF_TABLE[t]):
             style(ws.cell(r, 2 + j, v), "ref", "#,##0", align=CENTER)
-        style(ws.cell(r, 11, R.CF_NOTES[t]), "white")
-        fit_height(ws, r, [(R.CF_NOTES[t], 60)])
+        style(ws.cell(r, 2 + len(R.CF_COLUMNS), R.CF_NOTES[t]), "white")
+        fit_height(ws, r, [(R.CF_NOTES[t], 62)])
         r += 1
-    define(wb, "CF_TYPES", f"{q(S_REF)}!$A${first}:$A${r - 1}")
+    define(wb, "CF_TYPES", f"{q(S_TAB)}!$A${first}:$A${r - 1}")
     for j, name in enumerate(R.CF_NAMES):
         col = get_column_letter(2 + j)
-        define(wb, name, f"{q(S_REF)}!${col}${first}:${col}${r - 1}")
+        define(wb, name, f"{q(S_TAB)}!${col}${first}:${col}${r - 1}")
     note(ws.cell(hdr, 2), "Per eCKU (Basic, Standard, Enterprise) or per CKU (Dedicated). Units needed for a "
                           "dimension = planned demand / this figure, rounded up [C1].")
     note(ws.cell(hdr, 8), "Basic 50, Standard 10, Enterprise 32 eCKU (also the Azure Private Link limit for "
                           "Enterprise). Dedicated shows the 24-CKU invoice purchase limit; Azure supports up to "
                           "100 CKU by request [C1].")
-    r += 1
+    note(ws.cell(hdr, 9), "Topic max.message.bytes maximum: 8,388,608 on Basic and Standard; 20,971,520 on "
+                          "Dedicated and Enterprise [C3].")
     ws.cell(r, 1, "Freight clusters are not assessed: Confluent describes them for workloads that tolerate relaxed "
                   "latency [C1], and Azure self-managed keys are not offered on Freight [C4].").font = F_SUB
     r += 2
@@ -666,16 +687,19 @@ def build_ref(wb):
         style(ws.cell(r, 6, tbl), "white", align=CENTER)
         r += 1
     for name, col in [("PS_KEY", "A"), ("PS_N", "B"), ("PS_CPU", "C"), ("PS_RAM", "D"), ("PS_DISK", "E")]:
-        define(wb, name, f"{q(S_REF)}!${col}${first}:${col}${r - 1}")
-    ws.cell(r, 1, "Group Prod = Pega's 'Production, Stage' rows; Test = 'Testing, Development' rows. SRS figures are "
-                  "for pods on AKS, not for the search provider. 0 means N/A in Pega's table.").font = F_SUB
+        define(wb, name, f"{q(S_TAB)}!${col}${first}:${col}${r - 1}")
+    for text in ["Group Prod = Pega's 'Production, Stage' rows; Test = 'Testing, Development' rows. SRS figures are "
+                 "for pods on AKS, not for the search provider. 0 means N/A in Pega's table.", R.PEGA_TABLE4_NOTE]:
+        c = ws.cell(r, 1, text)
+        c.font, c.alignment = F_SUB, WRAP
+        ws.merge_cells(start_row=r, start_column=1, end_row=r, end_column=11)
+        fit_height(ws, r, [(text, 200)])
+        r += 1
     r += 1
-    ws.cell(r, 1, R.PEGA_TABLE4_NOTE).font = F_SUB
-    r += 2
 
     ws.cell(r, 1, "Maximum partitions per broker by machine type [P5]").font = F_BOLD
     r += 1
-    header_row(ws, r, ["CPU cores", "Memory GiB", "Maximum partitions per broker"], height=32)
+    header_row(ws, r, ["CPU cores", "Memory GiB", "Maximum partitions per broker"], height=44)
     r += 1
     first = r
     for cpu, ram, mx in R.PM_ROWS:
@@ -683,7 +707,7 @@ def build_ref(wb):
             style(ws.cell(r, 1 + j, v), "ref", "#,##0", align=CENTER)
         r += 1
     for name, col in [("PM_CPU", "A"), ("PM_RAM", "B"), ("PM_MAX", "C")]:
-        define(wb, name, f"{q(S_REF)}!${col}${first}:${col}${r - 1}")
+        define(wb, name, f"{q(S_TAB)}!${col}${first}:${col}${r - 1}")
     ws.cell(r, 1, "Pega lists the last row as 16+ cores and 64+ GiB. The page is for the embedded stream service; "
                   "it is used here only for the self-managed reference figures.").font = F_SUB
     r += 2
@@ -698,10 +722,9 @@ def build_ref(wb):
         for j, v in enumerate(vals):
             if v is not None:
                 style(ws.cell(r + i, 1 + j, v), "ref", align=CENTER)
-    define(wb, "LANDSCAPES", f"{q(S_REF)}!$A${first}:$A${first + 3}")
-    define(wb, "KAFKA_IDS", f"{q(S_REF)}!$B${first}:$B${first + 5}")
-    define(wb, "SEARCH_IDS", f"{q(S_REF)}!$C${first}:$C${first + 5}")
-    ws.freeze_panes = "A5"
+    define(wb, "LANDSCAPES", f"{q(S_TAB)}!$A${first}:$A${first + 3}")
+    define(wb, "KAFKA_IDS", f"{q(S_TAB)}!$B${first}:$B${first + 5}")
+    define(wb, "SEARCH_IDS", f"{q(S_TAB)}!$C${first}:$C${first + 5}")
     protect(ws)
     return ws
 
@@ -798,6 +821,10 @@ def build_kafka_sizing(wb, kc, kd_letters):
     g.add("n_noreq", "Environments without a requests figure", "count", "", "-",
           "=SUMPRODUCT((KD_CLUSTER={id})*(KD_REQ=\"\"))", fmt="0")
 
+    g.add("ready", "Demand entered", "1/0", "1 when the cluster has environments and a partition or throughput "
+                                            "figure; results are shown only then.", "-",
+          "=IF(AND({envs}>0,OR({d_part}>0,{d_in}>0)),1,0)", fmt="0")
+
     g.section("C. Planning allowance")
     g.add("growth", "Growth allowance", "%", "From the Kafka Clusters sheet.", "W",
           "=IF({KC_growth}=\"\",0,{KC_growth})", fmt="0%")
@@ -825,7 +852,7 @@ def build_kafka_sizing(wb, kc, kd_letters):
     g.add("pref", "Preferred type", "list", "", "-", "=IF({KC_pref}=\"\",\"Auto\",{KC_pref})")
     g.add("bill", "Billing method", "list", "", "C1", "=IF({KC_bill}=\"\",\"Invoice\",{KC_bill})")
 
-    g.section("E. Units each cluster type would need (per-unit limits are on Ref_Data)")
+    g.section("E. Units each cluster type would need (per-unit limits are on Ref_Tables)")
     rules = {
         "Basic": ("=IF(AND({sla}<=0.995,{priv}<>\"Yes\",{byok}<>\"Yes\"),\"Yes\",\"No\")",
                   "Only for a 99.5 % SLA, public networking and no self-managed keys.", "C1, C4", "1"),
@@ -868,7 +895,8 @@ def build_kafka_sizing(wb, kc, kd_letters):
           "=IF({envs}=0,\"Not used\",IF(AND({e_B}=\"Yes\",{f_B}=\"Yes\"),\"Basic\",IF(AND({e_S}=\"Yes\",{f_S}=\"Yes\"),"
           "\"Standard\",IF(AND({e_E}=\"Yes\",{f_E}=\"Yes\"),\"Enterprise\",\"Dedicated\"))))")
     g.add("type", "Recommended cluster type", "text", "The preferred type if one is set, otherwise the rule above.",
-          "C1", "=IF({envs}=0,\"Not used\",IF({pref}=\"Auto\",{auto},{pref}))", kind="key")
+          "C1", "=IF({envs}=0,\"Not used\",IF({ready}=0,\"Inputs needed\",IF({pref}=\"Auto\",{auto},{pref})))",
+          kind="key")
     g.add("idx", "Type position (1 Basic to 4 Dedicated)", "1-4", "", "-",
           "=IFERROR(MATCH({type},CF_TYPES,0),0)", fmt="0")
     g.add("unit", "Capacity unit", "text", "eCKU for elastic types; CKU for Dedicated.", "C1",
@@ -975,11 +1003,11 @@ def build_kafka_sizing(wb, kc, kd_letters):
           "=IF({envs}=0,\"-\",IF({sla}=0,\"FAIL: choose the required SLA\",\"PASS\"))", kind="white")
     g.add("c_pref", "Preferred type meets the requirements", "status",
           "A forced type must be eligible for the SLA, networking and key requirements.", "C1, C4",
-          "=IF({envs}=0,\"-\",IF({pref}=\"Auto\",\"INFO: type chosen by the workbook rule\",IF({idx}=0,"
+          "=IF({ready}=0,\"-\",IF({pref}=\"Auto\",\"INFO: type chosen by the workbook rule\",IF({idx}=0,"
           "\"FAIL: unknown type\",IF(CHOOSE({idx},{e_B},{e_S},{e_E},{e_D})=\"No\",\"FAIL: \"&{type}&\" does not "
           "meet the SLA, networking or key requirement\",\"PASS\"))))", kind="white")
     g.add("c_fit", "Units within the type maximum", "status", "", "C1",
-          "=IF({envs}=0,\"-\",IF({units}<={maxu},\"PASS\",IF({type}=\"Dedicated\",\"WARN: above the purchase limit; "
+          "=IF({ready}=0,\"-\",IF({units}<={maxu},\"PASS\",IF({type}=\"Dedicated\",\"WARN: above the purchase limit; "
           "Azure supports up to \"&CF_DED_AZURE&\" CKU by request\",\"FAIL: \"&{units}&\" units exceed the \"&{maxu}&\""
           " maximum for \"&{type})))", kind="white")
     g.add("c_fast", "Enterprise scaling", "status", "Enterprise scales fast up to 10 eCKU, then about 20 minutes per "
@@ -993,18 +1021,18 @@ def build_kafka_sizing(wb, kc, kd_letters):
     g.add("c_msgc", "Topic message size setting", "status",
           "Pega needs 5,000,000-byte messages; the Confluent topic default is 2,097,164 bytes, so max.message.bytes "
           "must be raised on Pega topics.", "P1, C3",
-          "=IF(OR({envs}=0,{idx}=0),\"-\",IF(MAX({d_msg},P_MSG_MAX)>INDEX(CF_MSGMAX,{idx}),\"FAIL: larger than the \""
+          "=IF(OR({ready}=0,{idx}=0),\"-\",IF(MAX({d_msg},P_MSG_MAX)>INDEX(CF_MSGMAX,{idx}),\"FAIL: larger than the \""
           "&{type}&\" topic maximum\",\"INFO: set topic max.message.bytes to at least \"&TEXT(MAX({d_msg},P_MSG_MAX),"
           "\"#,##0\")))", kind="white")
     g.add("c_p1", "Partitions against Pega's Table 1 statement", "status",
           "Pega's Table 1 sizing easily supports up to 1,000 partitions; above that Pega says to increase resources.",
-          "P1", "=IF({envs}=0,\"-\",IF({p_part}>P_KAFKA_PARTS,\"INFO: \"&TEXT({p_part},\"#,##0\")&\" planned "
+          "P1", "=IF({ready}=0,\"-\",IF({p_part}>P_KAFKA_PARTS,\"INFO: \"&TEXT({p_part},\"#,##0\")&\" planned "
                 "partitions, above the 1,000 of Pega's Table 1 sizing\",\"PASS\"))", kind="white")
     g.add("c_pm", "Partitions per broker within Pega's table", "status", "Self-managed reference only.", "P5",
-          "=IF({envs}=0,\"-\",IF({k_rpb}>INDEX(PM_MAX,5),\"WARN: \"&TEXT({k_rpb},\"#,##0\")&\" per broker is beyond "
+          "=IF({ready}=0,\"-\",IF({k_rpb}>INDEX(PM_MAX,5),\"WARN: \"&TEXT({k_rpb},\"#,##0\")&\" per broker is beyond "
           "Pega's table (4,000)\",\"PASS\"))", kind="white")
     g.add("c_byok", "Self-managed keys coverage", "status", "", "C4",
-          "=IF(OR({envs}=0,{byok}<>\"Yes\"),\"-\",IF({type}=\"Enterprise\",\"INFO: Enterprise temporary storage uses "
+          "=IF(OR({ready}=0,{byok}<>\"Yes\"),\"-\",IF({type}=\"Enterprise\",\"INFO: Enterprise temporary storage uses "
           "Confluent-owned keys\",IF({type}=\"Dedicated\",\"PASS\",\"FAIL: not available on \"&{type})))",
           kind="white")
     g.add("c_grow", "Growth allowance entered", "status", "", "W",
@@ -1015,6 +1043,7 @@ def build_kafka_sizing(wb, kc, kd_letters):
     chk_last = g.r - 1
     status_format(ws, f"{g.cols[0]}{chk_first}:{g.cols[-1]}{chk_last}")
     define(wb, "KS_CHECKS", f"{q(S_KS)}!${g.cols[0]}${chk_first}:${g.cols[-1]}${chk_last}")
+    g.grey_unused()
 
     g.r += 1
     g.section("J. Why this size: plain-English explanation per cluster")
@@ -1036,13 +1065,14 @@ def build_kafka_sizing(wb, kc, kd_letters):
                   f'IF({rr("driver")}="Client connections",TEXT({rr("p_conn")},"#,##0")&" planned connections against "&{lim("CF_CONN")}&" per unit",'
                   f'IF({rr("driver")}="Requests",TEXT({rr("p_req")},"#,##0")&" planned requests per second against "&{lim("CF_REQ")}&" per unit",'
                   f'"the minimum units Confluent requires for a "&TEXT({rr("sla")}*100,"0.0#")&"% SLA"))))))')
-        f = (f'=IF({rr("envs")}=0,"{KIDS[i]} is not used.",{rr("name")}&" ("&{rr("envlist")}&"): "&{rr("type")}&" with "&'
+        f = (f'=IF({rr("envs")}=0,"{KIDS[i]} is not used.",IF({rr("ready")}=0,{rr("name")}&" needs partition and '
+             f'throughput figures on the Kafka Demand sheet.",{rr("name")}&" ("&{rr("envlist")}&"): "&{rr("type")}&" with "&'
              f'{rr("units")}&" "&{rr("unit")}&". "&{reason}&"The size is set by "&{detail}&" [C1]. Planned figures '
              f'add "&TEXT({rr("growth")},"0%")&" growth and keep planned use at or below "&TEXT({rr("util")},"0%")&" of '
              f'capacity; the workbook applies Pega\'s 70% CPU action point to every dimension [P5][W]. Monthly quantities for pricing: "&TEXT({rr("b_in")},"#,##0")&" GiB in, "&TEXT({rr("b_out")},"#,##0")'
              f'&" GiB out and "&TEXT({rr("b_post")},"#,##0")&" GiB billed storage after replication [C2]. For '
              f'comparison, Pega\'s reference for a self-managed cluster is "&{rr("k_n")}&" brokers of "&{rr("k_cpu")}&" '
-             f'CPU, "&{rr("k_ram")}&" GB RAM and "&TEXT({rr("k_disk")},"#,##0")&" GB storage [P1][P5].")')
+             f'CPU, "&{rr("k_ram")}&" GB RAM and "&TEXT({rr("k_disk")},"#,##0")&" GB storage [P1][P5]."))')
         ws.cell(r, 2, KIDS[i])
         style(ws.cell(r, 2), "white", bold=True, align=CENTER)
         ws.cell(r, 3, f)
@@ -1089,6 +1119,10 @@ def build_search_sizing(wb, ss, sd_letters):
     g.add("n_nostat", "Environments without an input status", "count", "", "-",
           "=SUMPRODUCT((SD_SVC={id})*(SD_STATUS=\"\"))", fmt="0")
 
+    g.add("ready", "Demand entered", "1/0", "1 when the service has environments and a searchable data figure; "
+                                            "results are shown only then.", "-",
+          "=IF(AND({envs}>0,{gb}>0),1,0)", fmt="0")
+
     g.section("C. Requirements from the Search Services sheet")
     g.add("ha", "High availability", "Yes/No", "", "P2", "=IF({SS_ha}=\"\",\"Yes\",{SS_ha})")
     g.add("zones", "Availability zones", "count", "", "O1", "=IF({SS_zones}=\"\",3,{SS_zones})", fmt="0")
@@ -1103,7 +1137,8 @@ def build_search_sizing(wb, ss, sd_letters):
           "Default (W). Document count is reported in the checks.", "P2, W",
           "=IF({envs}=0,\"-\",IF({fgb}>=P_SEARCH_LARGE_GB,\"Large\",\"Default\"))")
     g.add("prof", "Profile used", "text", "The override on the Search Services sheet, if set.", "P2",
-          "=IF({envs}=0,\"-\",IF(OR({SS_prof}=\"\",{SS_prof}=\"Auto\"),{prof_auto},{SS_prof}))", kind="key")
+          "=IF({envs}=0,\"-\",IF({ready}=0,\"Inputs needed\",IF(OR({SS_prof}=\"\",{SS_prof}=\"Auto\"),{prof_auto},"
+          "{SS_prof})))", kind="key")
     lk = lambda role, field, grp="{group}": (
         "=IF({envs}=0,0,IFERROR(INDEX(PS_%s,MATCH({prof}&\"|%s|\"&%s,PS_KEY,0)),0))" % (field, role, grp))
     g.add("p_dn", "Pega data nodes", "count", "From the Pega table for the profile and landscape.", "P2",
@@ -1157,10 +1192,10 @@ def build_search_sizing(wb, ss, sd_letters):
           "=MAX({n_pega},{n_store},{n_shard},{n_heap},{n_rep})", fmt="0")
     g.add("dn", "Recommended data nodes", "nodes",
           "With high availability and more than one zone, rounded up to a multiple of the zone count.", "O1",
-          "=IF({envs}=0,0,IF(AND({ha}=\"Yes\",{zones}>1),ROUNDUP({n_min}/{zones},0)*{zones},{n_min}))", fmt="0",
+          "=IF({ready}=0,0,IF(AND({ha}=\"Yes\",{zones}>1),ROUNDUP({n_min}/{zones},0)*{zones},{n_min}))", fmt="0",
           kind="key")
     g.add("driver", "Rule that sets the count", "text", "First rule, in the order above, equal to the largest.", "-",
-          "=IF({envs}=0,\"-\",IF({n_min}={n_pega},\"Pega profile and HA rule\",IF({n_min}={n_store},\"Storage\","
+          "=IF({ready}=0,\"-\",IF({n_min}={n_pega},\"Pega profile and HA rule\",IF({n_min}={n_store},\"Storage\","
           "IF({n_min}={n_shard},\"Shards per node\",IF({n_min}={n_heap},\"Shards per GiB of heap\","
           "\"Replica placement\")))))", kind="key")
     g.add("alt_n", "Data nodes the other rules give", "nodes",
@@ -1176,13 +1211,13 @@ def build_search_sizing(wb, ss, sd_letters):
     g.section("H. Cluster managers and SRS")
     g.add("mn", "Recommended cluster manager nodes", "nodes",
           "3 for Production and Stage, or whenever high availability is required; otherwise Pega's test figure.",
-          "P2, O1", "=IF({envs}=0,0,IF(OR({group}=\"Prod\",{ha}=\"Yes\"),MAX({p_mn},O_MANAGERS),{p_mn}))", fmt="0",
+          "P2, O1", "=IF({ready}=0,0,IF(OR({group}=\"Prod\",{ha}=\"Yes\"),MAX({p_mn},O_MANAGERS),{p_mn}))", fmt="0",
           kind="key")
     g.add("mcpu", "Cluster manager vCPU", "vCPU", "", "P2", "=IF({mn}=0,0,{p_mcpu})", fmt="0", kind="key")
     g.add("mram", "Cluster manager RAM", "GB", "", "P2", "=IF({mn}=0,0,{p_mram})", fmt="0", kind="key")
     g.add("srs", "SRS pods on AKS (minimum)", "pods", "3 for Production and Stage or with high availability; SRS "
                                                     "autoscales above this.", "P2",
-          "=IF({envs}=0,0,IF(OR({group}=\"Prod\",{ha}=\"Yes\"),MAX({p_srs},P_SEARCH_HA),{p_srs}))", fmt="0", kind="key")
+          "=IF({ready}=0,0,IF(OR({group}=\"Prod\",{ha}=\"Yes\"),MAX({p_srs},P_SEARCH_HA),{p_srs}))", fmt="0", kind="key")
     g.add("srscpu", "SRS pod CPU / RAM", "text", "From the Pega table.", "P2",
           "=IF({srs}=0,\"-\",IFERROR(INDEX(PS_CPU,MATCH({prof}&\"|SRS|\"&{group},PS_KEY,0)),0)&\" CPU / \"&"
           "IFERROR(INDEX(PS_RAM,MATCH({prof}&\"|SRS|\"&{group},PS_KEY,0)),0)&\" GB\")")
@@ -1223,21 +1258,21 @@ def build_search_sizing(wb, ss, sd_letters):
           "=IF({envs}=0,\"-\",IF(AND({group}=\"Prod\",{ha}<>\"Yes\"),\"WARN: high availability not selected for a "
           "Production or Stage service\",\"PASS\"))", kind="white")
     g.add("c_rep", "Replicas can be allocated", "status", "", "O5, O6, A1",
-          "=IF({envs}=0,\"-\",IF({dn}<{rep}+1,\"FAIL: too few data nodes for the replicas (yellow cluster)\","
+          "=IF({ready}=0,\"-\",IF({dn}<{rep}+1,\"FAIL: too few data nodes for the replicas (yellow cluster)\","
           "IF({rep}=0,\"WARN: no replica; AWS recommends at least one\",\"PASS\")))", kind="white")
     g.add("c_disk", "Disk use below the low watermark", "status", "Above 85 % OpenSearch stops allocating replicas "
                                                                  "to the node.", "O3",
-          "=IF({envs}=0,\"-\",IF({use}>O_WM_LOW,\"FAIL: \"&TEXT({use},\"0%\")&\" is above the 85% low watermark\","
+          "=IF({ready}=0,\"-\",IF({use}>O_WM_LOW,\"FAIL: \"&TEXT({use},\"0%\")&\" is above the 85% low watermark\","
           "\"PASS\"))", kind="white")
     g.add("c_shard", "Shards per node within limits", "status", "", "O3, A2",
-          "=IF({envs}=0,\"-\",IF({spn}>{slim},\"FAIL: \"&TEXT({spn},\"#,##0\")&\" shards per node is above \"&"
+          "=IF({ready}=0,\"-\",IF({spn}>{slim},\"FAIL: \"&TEXT({spn},\"#,##0\")&\" shards per node is above \"&"
           "TEXT({slim},\"#,##0\"),\"PASS\"))", kind="white")
     g.add("c_size", "Shard size guideline", "status", "AWS guideline 10 to 50 GiB per shard.", "A2",
-          "=IF(OR({envs}=0,{prim}=0),\"-\",IF({avg}>A_SHARD_MAX,\"WARN: average shard \"&TEXT({avg},\"0\")&\" GB; "
+          "=IF(OR({ready}=0,{prim}=0),\"-\",IF({avg}>A_SHARD_MAX,\"WARN: average shard \"&TEXT({avg},\"0\")&\" GB; "
           "consider more primary shards\",IF({avg}<A_SHARD_MIN,\"INFO: average shard \"&TEXT({avg},\"0.0\")&\" GB, "
           "below the 10 GiB guideline\",\"PASS\")))", kind="white")
     g.add("c_docs", "Document count against Pega's large example", "status", "", "P2",
-          "=IF({envs}=0,\"-\",IF(AND({docs}>=P_SEARCH_LARGE_DOCS,{prof}<>\"Large\"),\"INFO: \"&TEXT({docs},\"#,##0\")&"
+          "=IF({ready}=0,\"-\",IF(AND({docs}>=P_SEARCH_LARGE_DOCS,{prof}<>\"Large\"),\"INFO: \"&TEXT({docs},\"#,##0\")&"
           "\" documents, above the ~750,000 of Pega's large example; confirm with indexing and query metrics\","
           "\"PASS\"))", kind="white")
     g.add("c_ver", "Engine version", "status", "Pega best practice is OpenSearch 2.15.", "P2",
@@ -1248,11 +1283,11 @@ def build_search_sizing(wb, ss, sd_letters):
           "=IF({envs}=0,\"-\",IF(AND({ha}=\"Yes\",{zones}<3),\"WARN: OpenSearch advises three zones for cluster "
           "managers\",\"PASS\"))", kind="white")
     g.add("c_t4", "Pega Table 4 figures", "status", "", "P2",
-          "=IF({envs}=0,\"-\",IF({prof}=\"Large\",\"INFO: Table 4 RAM total and storage need confirming with Pega "
-          "(see Ref_Data)\",\"PASS\"))", kind="white")
+          "=IF({ready}=0,\"-\",IF({prof}=\"Large\",\"INFO: Table 4 RAM total and storage need confirming with Pega "
+          "(see Ref_Tables)\",\"PASS\"))", kind="white")
     g.add("c_aws", "Compute against the AWS starting point", "status", "Information only; AWS gives it for "
                                                                       "demanding workloads.", "A3",
-          "=IF({envs}=0,\"-\",IF({t_cpu}<{aws_cpu},\"INFO: data-node vCPU below the AWS starting point for demanding "
+          "=IF({ready}=0,\"-\",IF({t_cpu}<{aws_cpu},\"INFO: data-node vCPU below the AWS starting point for demanding "
           "workloads\",\"PASS\"))", kind="white")
     g.add("c_share", "Production isolation", "status", "", "-",
           "=IF({envs}=0,\"-\",IF(AND({rank}=4,{envs}>1),\"INFO: Production shares this service with other "
@@ -1260,6 +1295,7 @@ def build_search_sizing(wb, ss, sd_letters):
     chk_last = g.r - 1
     status_format(ws, f"{g.cols[0]}{chk_first}:{g.cols[-1]}{chk_last}")
     define(wb, "SZ_CHECKS", f"{q(S_SZ)}!${g.cols[0]}${chk_first}:${g.cols[-1]}${chk_last}")
+    g.grey_unused()
 
     g.r += 1
     g.section("L. Why this size: plain-English explanation per service")
@@ -1269,7 +1305,8 @@ def build_search_sizing(wb, ss, sd_letters):
         prof_reason = (f'IF({rr("prof")}<>{rr("prof_auto")}," (selected by the customer)",IF({rr("prof")}="Large",'
                        f'" (searchable data at or above the 2 TB of Pega\'s large example)",'
                        f'" (searchable data below the 2 TB of Pega\'s large example)"))')
-        f = (f'=IF({rr("envs")}=0,"{SIDS[i]} is not used.",{rr("name")}&" ("&{rr("envlist")}&"): "&{rr("dn")}&" data '
+        f = (f'=IF({rr("envs")}=0,"{SIDS[i]} is not used.",IF({rr("ready")}=0,{rr("name")}&" needs a searchable '
+             f'data figure on the Search Demand sheet.",{rr("name")}&" ("&{rr("envlist")}&"): "&{rr("dn")}&" data '
              f'nodes of "&{rr("cpu")}&" vCPU, "&{rr("ram")}&" GB RAM and "&TEXT({rr("disk")},"#,##0")&" GB disk, plus "&'
              f'{rr("mn")}&" cluster manager nodes of "&{rr("mcpu")}&" vCPU and "&{rr("mram")}&" GB RAM. Pega profile: "&'
              f'{rr("prof")}&{prof_reason}&" [P2]. The data-node count is set by this rule: "&{rr("driver")}&"."&IF({rr("alt")}>0,'
@@ -1278,7 +1315,7 @@ def build_search_sizing(wb, ss, sd_letters):
              f'TEXT({rr("need")},"#,##0")&" GB [A1]; disk use at the end of the period is "&TEXT({rr("use")},"0%")&'
              f'" against the 85% low watermark [O3]. "&TEXT({rr("shards")},"#,##0")&" shards give "&'
              f'TEXT({rr("spn")},"#,##0")&" per node against a limit of "&TEXT({rr("slim")},"#,##0")&" [O3][A2]. '
-             f'SRS on AKS: at least "&{rr("srs")}&" pods [P2].")')
+             f'SRS on AKS: at least "&{rr("srs")}&" pods [P2]."))')
         ws.cell(r, 2, SIDS[i])
         style(ws.cell(r, 2), "white", bold=True, align=CENTER)
         ws.cell(r, 3, f)
@@ -1307,21 +1344,26 @@ def link_grid(wb, sheet, heading, sub, ids, rows, ext):
     return ws, g
 
 
-def static_table(ws, r, heading, header, rows, col_widths=None):
+def static_table(ws, r, heading, header, rows):
+    """Fixed table under a grid: first column in B, second in C:D, third in E:K (two columns: C:K)."""
+    spans = [(2, 2), (3, 4), (5, COL0 + 5)] if len(header) == 3 else [(2, 2), (3, COL0 + 5)]
+    width = {2: 34, 3: 69, 5: 111} if len(header) == 3 else {2: 34, 3: 180}
     ws.cell(r, 2, heading).font = Font(name="Calibri", size=11, bold=True, color=NAVY)
     r += 1
-    for j, h in enumerate(header):
-        c = ws.cell(r, 2 + j, h)
-        c.fill, c.font, c.border, c.alignment = FILL["head"], F_HEAD, BOX, CENTER
+    for (a, b), h in zip(spans, header):
+        for col in range(a, b + 1):
+            c = ws.cell(r, col, h if col == a else None)
+            c.fill, c.font, c.border, c.alignment = FILL["head"], F_HEAD, BOX, CENTER
+        if b > a:
+            ws.merge_cells(start_row=r, start_column=a, end_row=r, end_column=b)
     r += 1
     for row in rows:
-        for j, v in enumerate(row):
-            style(ws.cell(r, 2 + j, v), "white", align=WRAP)
-        if len(header) < 4:
-            last = 2 + len(header) - 1
-            if last < COL0 + 5:
-                ws.merge_cells(start_row=r, start_column=last, end_row=r, end_column=COL0 + 5)
-        fit_height(ws, r, [(str(v), 60) for v in row])
+        for (a, b), v in zip(spans, row):
+            for col in range(a, b + 1):
+                style(ws.cell(r, col, v if col == a else None), "white", bold=(a == 2), align=WRAP)
+            if b > a:
+                ws.merge_cells(start_row=r, start_column=a, end_row=r, end_column=b)
+        fit_height(ws, r, [(str(v), width[a]) for (a, _b), v in zip(spans, row)])
         r += 1
     return r + 1
 
@@ -1331,6 +1373,7 @@ def build_confluent_request(wb, ks, kc):
     ext.update({f"KC_{k}": (S_KC, r) for k, r in kc.rows.items()})
     rows = [
         ("section", "A. Cluster"),
+        ("envs", "Environments assigned", "count", "", "-", "={KS_envs}", "0"),
         ("name", "Cluster name", "text", "", "-", "={KS_name}", None),
         ("region", "Azure region", "text", "", "-",
          f"=IF({{KS_envs}}=0,\"-\",IF({{KC_region}}<>\"\",{{KC_region}},IF({q(S_SETUP)}!$C$8=\"\",\"(enter region)\",{q(S_SETUP)}!$C$8)))", None),
@@ -1369,6 +1412,7 @@ def build_confluent_request(wb, ks, kc):
                       "Figures link to the Kafka Sizing sheet. Ask Confluent to confirm the cluster type and units "
                       "and to price the quantities in Section C.", KIDS, rows, ext)
     status_format(ws, f"{g.cols[0]}{g.rows['ex']}:{g.cols[-1]}{g.rows['req']}")
+    g.grey_unused()
     r = g.r + 1
     r = static_table(ws, r, "E. Kafka settings Pega requires [P1]", ["Setting", "Value", "Note for Confluent Cloud"],
                      R.PEGA_KAFKA_SETTINGS)
@@ -1406,6 +1450,7 @@ def build_search_request(wb, sz, ss):
     ext.update({f"SS_{k}": (S_SS, r) for k, r in ss.rows.items()})
     rows = [
         ("section", "A. Service"),
+        ("nenv", "Environments assigned", "count", "", "-", "={SZ_envs}", "0"),
         ("name", "Service name", "text", "", "-", "={SZ_name}", None),
         ("region", "Azure region", "text", "", "-",
          f"=IF({{SZ_envs}}=0,\"-\",IF({{SS_region}}<>\"\",{{SS_region}},IF({q(S_SETUP)}!$C$8=\"\",\"(enter region)\",{q(S_SETUP)}!$C$8)))", None),
@@ -1438,6 +1483,7 @@ def build_search_request(wb, sz, ss):
                       "Figures link to the Search Sizing sheet. Ask the provider to confirm the node sizes, apply its "
                       "own storage overhead and price the service.", SIDS, rows, ext)
     status_format(ws, f"{g.cols[0]}{g.rows['ex']}:{g.cols[-1]}{g.rows['ex']}")
+    g.grey_unused("nenv")
     r = g.r + 1
     r = static_table(ws, r, "E. Cluster settings SRS requires [P2]", ["Setting", "Value", "Note"], [
         ("action.auto_create_index", "false", "SRS sets this itself if its user has manage cluster privileges; "
@@ -1468,8 +1514,8 @@ def build_checks(wb, ks, sz):
     title(ws, "10  Checks: summary of every check in the workbook",
           "Resolve every FAIL before sending the request sheets. Review every WARN. INFO items are facts the "
           "customer and the provider should know.")
-    widths(ws, [20, 12, 10, 10, 10, 10, 30, 4, 12, 14, 16, 16, 16, 30])
-    header_row(ws, 4, ["Kafka cluster / search service", "ID", "FAIL", "WARN", "INFO", "PASS", "Overall"])
+    widths(ws, [22, 10, 13, 11, 11, 11, 11, 32])
+    header_row(ws, 4, ["Kafka cluster / search service", "ID", "FAIL", "WARN", "INFO", "PASS", "", "Overall"])
     r = 5
     for g, ids, sheet in [(ks, KIDS, S_KS), (sz, SIDS, S_SZ)]:
         first = min(v for k, v in g.rows.items() if k.startswith("c_"))
@@ -1481,15 +1527,16 @@ def build_checks(wb, ks, sz):
             style(ws.cell(r, 2, ident), "calc", align=CENTER)
             for j, word in enumerate(["FAIL", "WARN", "INFO", "PASS"]):
                 style(ws.cell(r, 3 + j, f'=SUMPRODUCT(--(LEFT({rng},4)="{word}"))'), "calc", "0", align=CENTER)
-            style(ws.cell(r, 7, f'=IF({q(sheet)}!{col}{g.rows["envs"]}=0,"Not used",IF(C{r}>0,"FAIL: resolve before '
+            style(ws.cell(r, 7), "calc")
+            style(ws.cell(r, 8, f'=IF({q(sheet)}!{col}{g.rows["envs"]}=0,"Not used",IF(C{r}>0,"FAIL: resolve before '
                                 f'sending",IF(D{r}>0,"WARN: review",IF(E{r}>0,"INFO only","PASS"))))'), "white", bold=True)
             r += 1
-    status_format(ws, f"G5:G{r - 1}")
+    status_format(ws, f"H5:H{r - 1}")
     r += 1
     ws.cell(r, 1, "Environment input checks").font = Font(name="Calibri", size=11, bold=True, color=NAVY)
     r += 1
-    header_row(ws, r, ["Environment", "In scope", "Landscape", "Kafka cluster", "Search service", "Kafka status",
-                       "Overall"])
+    header_row(ws, r, ["Environment", "In scope", "Landscape", "Kafka cluster", "Search service",
+                       "Kafka input status", "Search input status", "Overall"], height=32)
     r += 1
     first = r
     for e in range(N_ENV):
@@ -1501,17 +1548,26 @@ def build_checks(wb, ks, sz):
         style(ws.cell(r, 4, f'=IF({S}!F{sr}="","missing",{S}!F{sr})'), "calc", align=CENTER)
         style(ws.cell(r, 5, f'=IF({S}!G{sr}="","missing",{S}!G{sr})'), "calc", align=CENTER)
         style(ws.cell(r, 6, f"=IF({q(S_KD)}!E{dr}=\"\",\"missing\",{q(S_KD)}!E{dr})"), "calc", align=CENTER)
-        style(ws.cell(r, 7, f'=IF({S}!B{sr}="","-",IF({S}!E{sr}<>"Yes","INFO: out of scope",IF(OR({S}!D{sr}="",'
+        style(ws.cell(r, 7, f"=IF({q(S_SD)}!E{dr}=\"\",\"missing\",{q(S_SD)}!E{dr})"), "calc", align=CENTER)
+        style(ws.cell(r, 8, f'=IF({S}!B{sr}="","-",IF({S}!E{sr}<>"Yes","INFO: out of scope",IF(OR({S}!D{sr}="",'
                             f'{S}!F{sr}="",{S}!G{sr}=""),"FAIL: landscape, cluster or service missing",IF(COUNTIF('
-                            f'ENV_CODE,{S}!B{sr})>1,"FAIL: duplicate environment code","PASS"))))'), "white", bold=True)
+                            f'ENV_CODE,{S}!B{sr})>1,"FAIL: duplicate environment code",IF(OR({q(S_KD)}!E{dr}="",'
+                            f'{q(S_SD)}!E{dr}=""),"WARN: input status not set","PASS")))))'), "white", bold=True)
         r += 1
-    status_format(ws, f"G{first}:G{r - 1}")
+    status_format(ws, f"H{first}:H{r - 1}")
     ws.freeze_panes = "A5"
     protect(ws)
     return ws
 
 
 # ----------------------------------------------------------------------------------- cover, guide, log
+
+def cover_header(ws, row, values):
+    for i, v in enumerate(values, 2):
+        c = ws.cell(row, i, v)
+        c.fill, c.font, c.border, c.alignment = FILL["head"], F_HEAD, BOX, CENTER
+    ws.row_dimensions[row].height = 22
+
 
 def build_cover(wb, ks, sz, example):
     ws = wb.create_sheet(S_COVER, 0)
@@ -1539,9 +1595,7 @@ def build_cover(wb, ks, sz, example):
     r = 13
     ws.cell(r, 2, "Results summary").font = Font(name="Calibri", size=13, bold=True, color=NAVY)
     r += 1
-    header_row(ws, r, ["", "Kafka cluster", "Environments", "Type", "Units", "Sized by", "Checks", ""], height=22)
-    ws.cell(r, 1).fill = FILL["white"]
-    ws.cell(r, 9).fill = FILL["white"]
+    cover_header(ws, r, ["Kafka cluster", "Environments", "Type", "Units", "Sized by", "Checks"])
     r += 1
     first = r
     for i, ident in enumerate(KIDS):
@@ -1549,16 +1603,13 @@ def build_cover(wb, ks, sz, example):
         vals = [f"={q(S_KS)}!{col}{ks.rows['name']}", f"={q(S_KS)}!{col}{ks.rows['envlist']}",
                 f"={q(S_KS)}!{col}{ks.rows['type']}",
                 f"=IF({q(S_KS)}!{col}{ks.rows['units']}=0,\"-\",{q(S_KS)}!{col}{ks.rows['units']}&\" \"&{q(S_KS)}!{col}{ks.rows['unit']})",
-                f"={q(S_KS)}!{col}{ks.rows['driver']}", f"={q(S_CK)}!G{5 + i}"]
+                f"={q(S_KS)}!{col}{ks.rows['driver']}", f"={q(S_CK)}!H{5 + i}"]
         for j, v in enumerate(vals):
             style(ws.cell(r, 2 + j, v), "key" if j in (2, 3) else "calc", align=CENTER)
         r += 1
     status_format(ws, f"G{first}:G{r - 1}")
     r += 1
-    header_row(ws, r, ["", "Search service", "Environments", "Data nodes", "Managers", "Sized by", "Checks", ""],
-               height=22)
-    ws.cell(r, 1).fill = FILL["white"]
-    ws.cell(r, 9).fill = FILL["white"]
+    cover_header(ws, r, ["Search service", "Environments", "Data nodes", "Managers", "Sized by", "Checks"])
     r += 1
     first = r
     for i, ident in enumerate(SIDS):
@@ -1569,7 +1620,7 @@ def build_cover(wb, ks, sz, example):
                 f"{S}!{col}{sz.rows['ram']}&\" GB / \"&{S}!{col}{sz.rows['disk']}&\" GB\")",
                 f"=IF({S}!{col}{sz.rows['mn']}=0,\"-\",{S}!{col}{sz.rows['mn']}&\" x \"&{S}!{col}{sz.rows['mcpu']}&\" vCPU / \"&"
                 f"{S}!{col}{sz.rows['mram']}&\" GB\")",
-                f"={S}!{col}{sz.rows['driver']}", f"={q(S_CK)}!G{11 + i}"]
+                f"={S}!{col}{sz.rows['driver']}", f"={q(S_CK)}!H{11 + i}"]
         for j, v in enumerate(vals):
             style(ws.cell(r, 2 + j, v), "key" if j in (2, 3) else "calc", align=CENTER)
         r += 1
@@ -1580,7 +1631,7 @@ def build_cover(wb, ks, sz, example):
     for k, text in [("input", "Input: the customer enters or confirms this value"),
                     ("calc", "Worked out by formula: do not overwrite"),
                     ("key", "Result: carried to the summary and the provider request sheets"),
-                    ("ref", "Published reference value (Ref_Data)"),
+                    ("ref", "Published reference value (Ref_Data and Ref_Tables)"),
                     ("warn", "WARN: review before sending"), ("fail", "FAIL: must be resolved before sending")]:
         style(ws.cell(r, 2, ""), k)
         ws.cell(r, 3, text).font = F_BASE
@@ -1601,6 +1652,7 @@ def build_cover(wb, ks, sz, example):
               (S_OR, "Request to send to the managed OpenSearch provider"),
               (S_CK, "Summary of all checks"),
               (S_REF, "Published figures used by the formulas, with quoted evidence"),
+              (S_TAB, "Published tables used by the formulas: Confluent limits, Pega search and partition tables"),
               (S_REFS, "Source documents with links"),
               (S_LOG, "Version history")]
     for s, text in sheets:
@@ -1774,6 +1826,7 @@ def build(example):
     build_search_request(wb, sz, ss)
     build_checks(wb, ks, sz)
     build_ref(wb)
+    build_ref_tables(wb)
     build_references(wb)
     build_log(wb)
     build_cover(wb, ks, sz, example)
@@ -1783,7 +1836,7 @@ def build(example):
                                         S_KD: "BF8F00", S_SS: "BF8F00", S_SD: "BF8F00", S_KS: "548235",
                                         S_SZ: "548235", S_CR: "2F5597", S_OR: "2F5597", S_CK: "C00000"}.get(ws.title, "7F7F7F")
         ws.page_setup.orientation = "landscape"
-        ws.page_setup.fitToWidth = 1
+        ws.page_setup.fitToWidth = 2 if ws.title == S_KD else 1
         ws.page_setup.fitToHeight = 0
         ws.sheet_properties.pageSetUpPr.fitToPage = True
         ws.print_options.horizontalCentered = True
