@@ -1,0 +1,26 @@
+digraph G {
+
+  graph [fontname="Liberation Sans", fontsize=11, bgcolor="white", pad="0.3", nodesep="0.35", ranksep="0.45", fontcolor="#1F3864"];
+  node  [fontname="Liberation Sans", fontsize=10, shape=box, style="rounded,filled", fillcolor="white", color="#44546A", penwidth=1.1, margin="0.14,0.07"];
+  edge  [fontname="Liberation Sans", fontsize=9, color="#44546A", fontcolor="#595959", arrowsize=0.7, penwidth=1.0];
+
+
+  rankdir=LR; nodesep=0.3; ranksep=0.55;
+  pod [label="Pega or SRS pod", fillcolor="#DCE6F2"];
+  core [label="CoreDNS\n(AKS)", fillcolor="#F2F2F2"];
+  res [label="Hub DNS resolver\nor Azure DNS", fillcolor="#F2F2F2"];
+  z1 [label="Private DNS zone for the\nConfluent network domain\nwildcard and zonal records", fillcolor="#F2F2F2"];
+  z2 [label="Private DNS zone for the\nOpenSearch provider endpoint", fillcolor="#F2F2F2"];
+  pe1 [label="Private endpoints (one per zone)\nto Confluent Private Link service", fillcolor="#E2EFDA"];
+  pe2 [label="Private endpoint to the\nOpenSearch provider", fillcolor="#E2EFDA"];
+  fw [label="Hub firewall\negress allow-list", fillcolor="#F8CBAD"];
+  okta [label="Okta (public SaaS)\n<okta-domain>:443", fillcolor="#FCE4D6"];
+  pod -> core -> res;
+  res -> z1 [label="bootstrap and\nbroker names"];
+  res -> z2 [label="search host"];
+  pod -> pe1 [label="9092 SASL_SSL", color="#C55A11", fontcolor="#C55A11"];
+  pod -> pe2 [label="443 HTTPS", color="#7030A0", fontcolor="#7030A0"];
+  pod -> fw [label="443 token and key set"];
+  fw -> okta;
+
+}

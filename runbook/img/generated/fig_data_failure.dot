@@ -1,0 +1,38 @@
+digraph G {
+
+  graph [fontname="Liberation Sans", fontsize=11, bgcolor="white", pad="0.3", nodesep="0.35", ranksep="0.45", fontcolor="#1F3864"];
+  node  [fontname="Liberation Sans", fontsize=10, shape=box, style="rounded,filled", fillcolor="white", color="#44546A", penwidth=1.1, margin="0.14,0.07"];
+  edge  [fontname="Liberation Sans", fontsize=9, color="#44546A", fontcolor="#595959", arrowsize=0.7, penwidth=1.0];
+
+
+  rankdir=TB; nodesep=0.35; ranksep=0.35;
+  subgraph cluster_q {
+    label="Queue processor message"; style="rounded,dashed"; color="#44546A"; fontsize=10;
+    p [label="Producer: Queue-For-Processing\nor Run in Background", fillcolor="#DCE6F2"];
+    q1 [shape=diamond, style="filled", fillcolor="#FFF2CC", label="Stream service\navailable?", margin="0.04,0.04", fontsize=9.5];
+    dbq [label="Held in the database;\njob scheduler queues it\nwhen Kafka returns [R66]", fillcolor="#F2F2F2"];
+    t [label="Topic pega-<env>-<queue>", fillcolor="#E2EFDA"];
+    c [label="Consumer runs the\nqueue processor activity", fillcolor="#DCE6F2"];
+    q2 [shape=diamond, style="filled", fillcolor="#FFF2CC", label="Succeeded?", margin="0.04,0.04", fontsize=9.5];
+    ok1 [label="Done; offset committed", fillcolor="#E2EFDA"];
+    d [label="Delayed item for retry\npr_sys_delayed_queue", fillcolor="#F2F2F2"];
+    q3 [shape=diamond, style="filled", fillcolor="#FFF2CC", label="MaxAttempts\nreached?", margin="0.04,0.04", fontsize=9.5];
+    br [label="Broken item with payload\nand error\npr_sys_msg_qp_brokenitems", fillcolor="#F8CBAD"];
+    fx [label="Fix cause; requeue or delete\nin Admin Studio [R64]", fillcolor="#FCE4D6"];
+    p -> q1; q1 -> t [label="yes"]; q1 -> dbq [label="no"]; dbq -> t [style=dashed];
+    t -> c -> q2; q2 -> ok1 [label="yes"]; q2 -> d [label="no"]; d -> q3;
+    q3 -> c [label="no, retry", style=dashed]; q3 -> br [label="yes"]; br -> fx;
+  }
+  subgraph cluster_s {
+    label="Search index update"; style="rounded,dashed"; color="#44546A"; fontsize=10;
+    s0 [label="Case or data instance saved", fillcolor="#DCE6F2"];
+    s1 [label="pySASIncrementalIndexer\nqueue processor [R70]", fillcolor="#DCE6F2"];
+    s2 [label="SRS bulk request\n(100 items by default)", fillcolor="#E4DFEC"];
+    s3 [shape=diamond, style="filled", fillcolor="#FFF2CC", label="Indexed?", margin="0.04,0.04", fontsize=9.5];
+    s4 [label="Searchable", fillcolor="#E2EFDA"];
+    s5 [label="Broken item with error type\nCONNECTION, STORAGE,\nUNRECOGNISED_VALUE [R69]", fillcolor="#F8CBAD"];
+    s6 [label="Fix SRS, OpenSearch or Okta;\nrequeue; reconcile counts;\nreindex the class if needed", fillcolor="#FCE4D6"];
+    s0 -> s1 -> s2 -> s3; s3 -> s4 [label="yes"]; s3 -> s5 [label="no, after retries"]; s5 -> s6;
+  }
+
+}

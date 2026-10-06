@@ -1,0 +1,26 @@
+digraph G {
+
+  graph [fontname="Liberation Sans", fontsize=11, bgcolor="white", pad="0.3", nodesep="0.35", ranksep="0.45", fontcolor="#1F3864"];
+  node  [fontname="Liberation Sans", fontsize=10, shape=box, style="rounded,filled", fillcolor="white", color="#44546A", penwidth=1.1, margin="0.14,0.07"];
+  edge  [fontname="Liberation Sans", fontsize=9, color="#44546A", fontcolor="#595959", arrowsize=0.7, penwidth=1.0];
+
+
+  rankdir=TB;
+  start [label="Select the Confluent Cloud cluster type", fillcolor="#DCE6F2"];
+  q1 [shape=diamond, style="filled", fillcolor="#FFF2CC", label="Holds cloned or masked\nproduction data?", margin="0.04,0.04", fontsize=9.5];
+  q2 [shape=diamond, style="filled", fillcolor="#FFF2CC", label="Need VNet peering, or more\nthan 32 eCKU with\nPrivate Link?", margin="0.04,0.04", fontsize=9.5];
+  q3 [shape=diamond, style="filled", fillcolor="#FFF2CC", label="Measured partitions and\nthroughput within\nEnterprise limits?", margin="0.04,0.04", fontsize=9.5];
+  basic [label="Basic or Standard\n(sandbox only, no cloned data)", fillcolor="#FFF2CC"];
+  ent [label="Enterprise\nPrivate Link", fillcolor="#E2EFDA"];
+  ded [label="Dedicated\nPrivate Link or VNet peering", fillcolor="#E2EFDA"];
+  frt [label="Freight: not suitable\n(no idempotent producer,\nno transactions)", fillcolor="#F8CBAD"];
+  start -> q1;
+  q1 -> basic [label="No"];
+  q1 -> q2 [label="Yes"];
+  q2 -> ded [label="Yes"];
+  q2 -> q3 [label="No"];
+  q3 -> ent [label="Yes"];
+  q3 -> ded [label="No"];
+  start -> frt [style=dashed, arrowhead=none];
+
+}

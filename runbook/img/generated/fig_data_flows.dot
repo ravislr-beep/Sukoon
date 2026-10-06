@@ -1,0 +1,44 @@
+digraph G {
+
+  graph [fontname="Liberation Sans", fontsize=11, bgcolor="white", pad="0.3", nodesep="0.35", ranksep="0.45", fontcolor="#1F3864"];
+  node  [fontname="Liberation Sans", fontsize=10, shape=box, style="rounded,filled", fillcolor="white", color="#44546A", penwidth=1.1, margin="0.14,0.07"];
+  edge  [fontname="Liberation Sans", fontsize=9, color="#44546A", fontcolor="#595959", arrowsize=0.7, penwidth=1.0];
+
+
+  rankdir=TB; nodesep=0.55; ranksep=0.7; newrank=true;
+  kv [label="Key Vault kv-pega-<env>\nsecrets", fillcolor="#FCE4D6"];
+  okta [label="Okta authorization server\ntokens carry no personal data", fillcolor="#FCE4D6"];
+  subgraph cluster_aks {
+    label="AKS cluster: namespaces pega-<env> and srs-<env>"; labeljust=l; style="rounded,dashed"; color="#44546A"; fontsize=10;
+    web [label="Pega web tier\nproducers, search queries", fillcolor="#DCE6F2"];
+    bat [label="Pega batch tier\nconsumers, indexer", fillcolor="#DCE6F2"];
+    srs [label="SRS srs-<env>\nport 8443", fillcolor="#E4DFEC"];
+    disk [label="Node disks\ncontainer logs, GC log,\nheap dumps", shape=folder, fillcolor="#F2F2F2"];
+  }
+  db [label="Pega database\n(system of record)\ncase and data records,\ndelayed and broken items", shape=cylinder, style=filled, fillcolor="#F2F2F2"];
+  k [label="Confluent Cloud\ntopics pega-<env>-*", fillcolor="#E2EFDA"];
+  os [label="Managed OpenSearch\nindexes pega26-<env>*,\nsnapshots", fillcolor="#E2EFDA"];
+  mon [label="Log Analytics\nand SIEM", fillcolor="#F2F2F2"];
+  {rank=same; kv; okta;}
+  {rank=same; web; bat;}
+  {rank=same; srs; disk;}
+  {rank=same; db; k; os; mon;}
+  kv -> web [label="External Secrets", color="#7F7F7F", fontcolor="#7F7F7F", style=dashed];
+  web -> okta [label="HTTPS: client\nassertion, token", color="#7F7F7F", fontcolor="#7F7F7F"];
+  srs -> okta [label="HTTPS: key set", color="#7F7F7F", fontcolor="#7F7F7F", style=dashed, constraint=false];
+  web -> db [label="JDBC over TLS\ncase data", color="#C00000", fontcolor="#C00000", penwidth=1.6];
+  web -> k [label="SASL_SSL over Private Link\nqueue messages,\ncluster messaging", color="#C55A11", fontcolor="#C55A11", penwidth=1.6];
+  k -> bat [label="SASL_SSL\nconsume", color="#C55A11", fontcolor="#C55A11", penwidth=1.6, constraint=false];
+  web -> srs [label="HTTPS + JWT\nsearch terms, results", color="#C00000", fontcolor="#C00000", penwidth=1.6];
+  bat -> srs [label="HTTPS + JWT\nindexed properties", color="#C00000", fontcolor="#C00000", penwidth=1.6];
+  srs -> os [label="HTTPS over private\nendpoint: documents", color="#C00000", fontcolor="#C00000", penwidth=1.6];
+  bat -> disk [label="logs, dumps", color="#C00000", fontcolor="#C00000", style=dashed];
+  disk -> mon [label="Azure Monitor\nagent, HTTPS", color="#C55A11", fontcolor="#C55A11", style=dashed];
+  leg [shape=plaintext, style="", label=<<TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="4" COLOR="#44546A">
+    <TR><TD COLSPAN="3"><B>Line colour: highest data class on the hop</B></TD></TR>
+    <TR><TD><FONT COLOR="#C00000">Restricted: personal or sensitive case data</FONT></TD>
+        <TD><FONT COLOR="#C55A11">Confidential: record keys, operator IDs, context</FONT></TD>
+        <TD><FONT COLOR="#7F7F7F">Internal, or secret material</FONT></TD></TR></TABLE>>];
+  os -> leg [style=invis];
+
+}

@@ -1,0 +1,21 @@
+digraph G {
+
+  graph [fontname="Liberation Sans", fontsize=11, bgcolor="white", pad="0.3", nodesep="0.35", ranksep="0.45", fontcolor="#1F3864"];
+  node  [fontname="Liberation Sans", fontsize=10, shape=box, style="rounded,filled", fillcolor="white", color="#44546A", penwidth=1.1, margin="0.14,0.07"];
+  edge  [fontname="Liberation Sans", fontsize=9, color="#44546A", fontcolor="#595959", arrowsize=0.7, penwidth=1.0];
+
+
+  rankdir=LR; nodesep=0.3; ranksep=0.45;
+  i1 [label="8.8 production facts\npeak users, case volumes,\nqueue item rates, search rate", fillcolor="#EDEDED"];
+  i2 [label="DEV measurements\ntopics, partitions, connections\nper pod, index size", fillcolor="#DCE6F2"];
+  calc [label="Sizing calculator\nKafka units, OpenSearch nodes\nand storage, AKS nodes,\ntoken rate", fillcolor="#E2EFDA"];
+  perf [label="PERF load tests\nat production volume", fillcolor="#DCE6F2"];
+  ok [shape=diamond, style="filled", fillcolor="#FFF2CC", label="Targets met\nwith headroom?", margin="0.04,0.04", fontsize=9.5];
+  adj [label="Adjust inputs\nor sizes", fillcolor="#F8CBAD"];
+  sign [label="PROD sizes signed\noff at M3", fillcolor="#E2EFDA"];
+  run [label="Production monitoring\nquarterly capacity review", fillcolor="#F2F2F2"];
+  i1 -> calc; i2 -> calc; calc -> perf -> ok;
+  ok -> adj [label="no"]; adj -> calc;
+  ok -> sign [label="yes"]; sign -> run; run -> calc [style=dashed, label="actual usage"];
+
+}

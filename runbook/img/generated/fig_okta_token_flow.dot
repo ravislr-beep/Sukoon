@@ -1,0 +1,22 @@
+digraph G {
+
+  graph [fontname="Liberation Sans", fontsize=11, bgcolor="white", pad="0.3", nodesep="0.35", ranksep="0.45", fontcolor="#1F3864"];
+  node  [fontname="Liberation Sans", fontsize=10, shape=box, style="rounded,filled", fillcolor="white", color="#44546A", penwidth=1.1, margin="0.14,0.07"];
+  edge  [fontname="Liberation Sans", fontsize=9, color="#44546A", fontcolor="#595959", arrowsize=0.7, penwidth=1.0];
+
+
+  rankdir=LR; nodesep=0.5;
+  pega [label="Pega node\n(web or batch)\nclientId pega-srs-<env>", fillcolor="#DCE6F2"];
+  okta [label="Okta custom authorization server\n/oauth2/<server-id>/v1/token\nscope pega.search:full\nclaim guid = pega26-<env>", fillcolor="#FCE4D6"];
+  jwks [label="Okta key set\njwks_uri from the\ndiscovery document", fillcolor="#FCE4D6"];
+  srs [label="SRS for <env>\nAuthEnabled true\nOAuthPublicKeyURL", fillcolor="#E4DFEC"];
+  chk [label="SRS checks\n1 signature (key set)\n2 guid equals\n   customerDeploymentId", shape=note, fillcolor="white"];
+  os [label="Managed OpenSearch\nindexes pega26-<env>*", fillcolor="#E2EFDA"];
+  pega -> okta [label="1 client credentials grant\nprivate_key_jwt (RS256),\nkey from Key Vault"];
+  okta -> pega [label="2 access token (JWT)", style=dashed];
+  pega -> srs [label="3 request with\nbearer token"];
+  srs -> jwks [label="4 fetch signing keys\n(through egress firewall)", style=dashed];
+  srs -> chk [style=dotted, arrowhead=none];
+  srs -> os [label="5 TLS + SRS user\n(index-scoped role)"];
+
+}

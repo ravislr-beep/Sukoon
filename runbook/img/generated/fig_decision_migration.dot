@@ -1,0 +1,24 @@
+digraph G {
+
+  graph [fontname="Liberation Sans", fontsize=11, bgcolor="white", pad="0.3", nodesep="0.35", ranksep="0.45", fontcolor="#1F3864"];
+  node  [fontname="Liberation Sans", fontsize=10, shape=box, style="rounded,filled", fillcolor="white", color="#44546A", penwidth=1.1, margin="0.14,0.07"];
+  edge  [fontname="Liberation Sans", fontsize=9, color="#44546A", fontcolor="#595959", arrowsize=0.7, penwidth=1.0];
+
+
+  rankdir=TB;
+  start [label="8.8 content that touches Kafka or search", fillcolor="#DCE6F2"];
+  q1 [shape=diamond, style="filled", fillcolor="#FFF2CC", label="Pega stream data in the\n8.8 embedded Kafka?", margin="0.04,0.04", fontsize=9.5];
+  q2 [shape=diamond, style="filled", fillcolor="#FFF2CC", label="Search index in the 8.8\nembedded Elasticsearch?", margin="0.04,0.04", fontsize=9.5];
+  q3 [shape=diamond, style="filled", fillcolor="#FFF2CC", label="Queue item held in\nthe database?", margin="0.04,0.04", fontsize=9.5];
+  q4 [shape=diamond, style="filled", fillcolor="#FFF2CC", label="Application Kafka data set\non the customer's own\nKafka cluster?", margin="0.04,0.04", fontsize=9.5];
+  drain [label="NOT MIGRATED: hold intake, drain on 8.8,\nrecord zero counts. 26.1.1 creates\nempty topics under its own prefix", fillcolor="#E2EFDA"];
+  rebuild [label="NOT MIGRATED: full index build\nthrough SRS from the upgraded\ndatabase", fillcolor="#E2EFDA"];
+  clone [label="TRAVELS WITH THE CLONE:\nhandle as in Section 11.3,\ntest in rehearsal", fillcolor="#FFF2CC"];
+  ds [label="DECIDE PER DATA SET\n(Section 12.3)", fillcolor="#FFF2CC"];
+  start -> q1;
+  q1 -> drain [label="Yes"]; q1 -> q2 [label="No"];
+  q2 -> rebuild [label="Yes"]; q2 -> q3 [label="No"];
+  q3 -> clone [label="Yes"]; q3 -> q4 [label="No"];
+  q4 -> ds [label="Yes"];
+
+}
